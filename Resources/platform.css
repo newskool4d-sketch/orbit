@@ -1,0 +1,7 @@
+html[data-platform=windows] body {
+  font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
+}
+
+html[data-platform=windows] #launch-login-option {
+  display: none;
+}
