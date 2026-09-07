@@ -1,5 +1,18 @@
 # Orbit
 
+일정·할 일·최근 파일·AI 작업을 확인하는 개인용 데스크톱 앱입니다. 이 저장소는 **macOS 원본과 Windows 포트**를 함께 관리합니다.
+
+| 플랫폼 | 실행부 | 안내 |
+| --- | --- | --- |
+| macOS | Swift / AppKit / WebKit, 메뉴 막대 앱 | 아래 macOS 안내 |
+| Windows | .NET 10 / WPF / WebView2, 트레이 앱 | [Windows 실행·빌드 안내](Windows/README.md) · [검증 범위](Windows/VERIFICATION.md) |
+
+공용 UI는 Resources/, macOS 실행부는 Sources/, Windows 실행부는 Windows/src/Orbit.Windows/에 있습니다. 두 플랫폼의 인증 저장소와 AI 작업 열기 동작은 다릅니다. Windows 포트는 시험판이며 정확한 기존 AI 대화 재개 등 제한은 Windows 안내를 확인하세요.
+
+Windows 빌드: PowerShell에서 ./Windows/scripts/build.ps1, 검증: ./Windows/scripts/test.ps1 -NativeUi. .NET SDK 10.0.400과 WebView2 Runtime이 필요합니다. 실행 패키지는 ./Windows/scripts/package.ps1로 생성합니다. ZIP·실행 바이너리·OAuth JSON·로컬 설정은 소스 커밋에 포함하지 않습니다.
+
+## macOS 안내
+
 macOS 메뉴 막대에서 일정·할 일·최근 파일·Codex·Claude Code 작업을 확인하는 개인용 앱입니다. 승인된 Moss/Pearl/Midnight 디자인을 실제 AppKit 팝오버로 구현했습니다.
 
 ## 실행

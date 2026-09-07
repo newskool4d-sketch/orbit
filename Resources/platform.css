@@ -1,0 +1,10 @@
+html[data-platform=windows] body {
+  font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
+}
+
+html[data-platform=windows] #launch-login-option {
+  display: none;
+}
+
+.agent-action { display:block; font-size:11px; line-height:1.5; opacity:.85; margin-top:6px; }
+.agent:disabled { cursor:not-allowed; opacity:.65; }
