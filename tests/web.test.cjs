@@ -60,3 +60,89 @@ test('Calendar tab exposes the seven-day event list with accessible tab wiring',
   assert.match(source, /calendarDateLabel\(group\.stamp\)/);
   assert.match(source, /data-event="\$\{esc\(event\.id\)\}"/);
 });
+
+test('Readability controls expose three persisted text sizes', () => {
+  const html = fs.readFileSync(path.join(__dirname, '../Resources/index.html'), 'utf8');
+  const style = fs.readFileSync(path.join(__dirname, '../Resources/readability.css'), 'utf8');
+  for (const value of ['normal', 'large', 'xlarge']) {
+    assert.match(html, new RegExp(`data-text-size="${value}"`));
+    assert.match(source, new RegExp(`['"]${value}['"]`));
+  }
+  assert.match(html, /href="readability\.css"/);
+  assert.match(style, /--font-body:\s*14px/);
+  assert.match(style, /data-text-size="large"/);
+  assert.match(style, /data-text-size="xlarge"/);
+  assert.match(style, /grid-template-columns:\s*1fr/);
+});
+
+test('Glass surfaces and Windows font stack remain theme-aware', () => {
+  const style = fs.readFileSync(path.join(__dirname, '../Resources/readability.css'), 'utf8');
+  assert.match(style, /Segoe UI Variable Text/);
+  assert.match(style, /body\[data-theme="pearl"\][\s\S]*--glass-edge/);
+  assert.match(style, /body\[data-theme="cobalt"\][\s\S]*--glass-edge/);
+  assert.match(style, /backdrop-filter:\s*blur\(18px\)/);
+});
+
+test('Google Tasks dates are described as scheduled dates rather than deadlines', () => {
+  assert.match(source, /예정일 지남/);
+  assert.match(source, /오늘 예정/);
+  assert.doesNotMatch(source, /기한 지남|오늘 마감/);
+});
+
+test('D-day uses calendar-day ordinals across month, year, leap day, and DST boundaries', () => {
+  const context = vm.createContext({ Date });
+  for (const name of ['dayKey', 'dayOrdinal', 'ddayDelta', 'ddayLabel']) {
+    const declaration = source.split('\n').find(line => line.startsWith(`function ${name}(`));
+    vm.runInContext(declaration, context);
+  }
+  assert.equal(context.ddayLabel('2026-09-18', '2026-09-17'), 'D-1');
+  assert.equal(context.ddayLabel('2026-09-17', '2026-09-17'), 'D-day');
+  assert.equal(context.ddayLabel('2026-09-16', '2026-09-17'), 'D+1');
+  assert.equal(context.ddayDelta('2027-01-01', '2026-12-31'), 1);
+  assert.equal(context.ddayDelta('2028-03-01', '2028-02-28'), 2);
+  assert.equal(context.ddayDelta('2026-03-09', '2026-03-08'), 1);
+  assert.equal(Number.isNaN(context.dayOrdinal('2026-02-30')), true);
+});
+
+test('D-day ordering pins first, keeps future before past, and preserves creation order for ties', () => {
+  const context = vm.createContext({ Date });
+  for (const name of ['dayKey', 'dayOrdinal', 'ddayDelta', 'ddaySort']) {
+    const declaration = source.split('\n').find(line => line.startsWith(`function ${name}(`));
+    vm.runInContext(declaration, context);
+  }
+  const values = [
+    { id: 'c', targetDate: '2026-09-16', pinned: false, createdAt: '2026-01-03' },
+    { id: 'b', targetDate: '2026-09-19', pinned: false, createdAt: '2026-01-02' },
+    { id: 'a', targetDate: '2026-09-20', pinned: true, createdAt: '2026-01-01' },
+    { id: 'd', targetDate: '2026-09-19', pinned: false, createdAt: '2026-01-04' },
+  ];
+  assert.deepEqual(Array.from(context.ddaySort(values, '2026-09-17'), item => item.id), ['a', 'b', 'd', 'c']);
+});
+
+test('D-day UI provides local add, edit, archive, and title-visible delete confirmation', () => {
+  const html = fs.readFileSync(path.join(__dirname, '../Resources/index.html'), 'utf8');
+  assert.match(html, /id="dday-section"/);
+  assert.match(html, /id="dday-manager"/);
+  assert.match(html, /id="dday-title"[^>]*maxlength="120"/);
+  assert.match(html, /id="dday-date"[^>]*type="date"/);
+  assert.match(source, /data-dday-action="archive"/);
+  assert.match(source, /dday-delete-confirm/);
+  assert.match(source, /‘\$\{title\}’/);
+});
+
+test('Both native hosts expose D-day capability and preserve corrupt local stores', () => {
+  const windowsStore = fs.readFileSync(path.join(__dirname, '../Windows/src/Orbit.Windows/DdayStore.cs'), 'utf8');
+  const windowsHost = fs.readFileSync(path.join(__dirname, '../Windows/src/Orbit.Windows/Program.cs'), 'utf8');
+  const macStore = fs.readFileSync(path.join(__dirname, '../Sources/DdayStore.swift'), 'utf8');
+  const macHost = fs.readFileSync(path.join(__dirname, '../Sources/Bridge.swift'), 'utf8');
+  assert.match(windowsStore, /File\.Move\(temp, path, true\)/);
+  assert.match(windowsStore, /Error = LoadMessage/);
+  assert.match(macStore, /write\(to: url, options: \.atomic\)/);
+  assert.match(macStore, /loadError = "중요 날짜 저장 파일을 읽지 못했습니다/);
+  for (const action of ['addDday', 'updateDday', 'archiveDday', 'deleteDday']) {
+    assert.match(windowsHost, new RegExp(`case "${action}"`));
+    assert.match(macHost, new RegExp(`case "${action}"`));
+  }
+  assert.match(windowsHost, /\["dday"\]=true/);
+  assert.match(macHost, /"dday": true/);
+});

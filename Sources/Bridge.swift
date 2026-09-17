@@ -8,6 +8,7 @@ import WebKit
   let webView: WKWebView
   let prefs = Preferences()
   let google = GoogleClient()
+  let ddays = DdayStore()
   var local = LocalSnapshot()
   var events = [CalendarEntry]()
   var tasks = [TaskEntry]()
@@ -85,10 +86,13 @@ import WebKit
     emit([
       "kind": "snapshot", "files": local.files.map { $0.display() },
       "agents": local.agents.map { $0.display() }, "events": jsonObject(events),
-      "tasks": jsonObject(tasks), "statuses": jsonObject(statuses), "theme": prefs.theme,
+      "tasks": jsonObject(tasks), "ddays": jsonObject(ddays.items),
+      "ddayError": ddays.loadError, "statuses": jsonObject(statuses), "theme": prefs.theme,
       "pinned": app.pinned, "refreshing": localBusy || googleBusy,
+      "capabilities": ["dday": true, "launchAtLogin": true],
       "settings": [
-        "drive": prefs.drive, "vault": prefs.vault, "googleConfigured": google.configured,
+        "textSize": prefs.textSize, "drive": prefs.drive, "vault": prefs.vault,
+        "googleConfigured": google.configured,
         "googleConnected": google.connected, "googleAuthorizing": google.authorizing,
         "launchAtLogin": SMAppService.mainApp.status == .enabled,
       ],
@@ -211,6 +215,11 @@ import WebKit
       }
       prefs.theme = value
       app.applyTheme(value)
+    case "textSize":
+      guard let value = body["value"] as? String,
+        ["normal", "large", "xlarge"].contains(value)
+      else { throw OrbitError(message: "지원하지 않는 글자 크기입니다.") }
+      prefs.textSize = value
     case "pin": app.setPinned(body["value"] as? Bool ?? false)
     case "close": app.popover.performClose(nil)
     case "quit": app.quit()
@@ -282,6 +291,30 @@ import WebKit
         tasks[index].completed = value
       }
       return value ? "Google Tasks에 완료로 저장했습니다." : "Google Tasks 할 일을 다시 열었습니다."
+    case "addDday":
+      guard let title = body["title"] as? String, let targetDate = body["targetDate"] as? String,
+        let pinned = body["pinned"] as? Bool
+      else { throw OrbitError(message: "중요 날짜 입력을 확인하세요.") }
+      try ddays.add(title: title, targetDate: targetDate, pinned: pinned)
+      return "중요 날짜를 저장했습니다."
+    case "updateDday":
+      guard let id = body["id"] as? String, let title = body["title"] as? String,
+        let targetDate = body["targetDate"] as? String, let pinned = body["pinned"] as? Bool
+      else { throw OrbitError(message: "중요 날짜 입력을 확인하세요.") }
+      try ddays.update(id: id, title: title, targetDate: targetDate, pinned: pinned)
+      return "중요 날짜를 변경했습니다."
+    case "archiveDday":
+      guard let id = body["id"] as? String, let value = body["value"] as? Bool else {
+        throw OrbitError(message: "중요 날짜 목록을 새로고침하세요.")
+      }
+      try ddays.archive(id: id, value: value)
+      return value ? "중요 날짜를 보관했습니다." : "중요 날짜를 복원했습니다."
+    case "deleteDday":
+      guard let id = body["id"] as? String else {
+        throw OrbitError(message: "중요 날짜 목록을 새로고침하세요.")
+      }
+      try ddays.delete(id: id)
+      return "중요 날짜를 삭제했습니다."
     case "chooseDrive": try chooseFolder(key: "drive")
     case "chooseVault": try chooseFolder(key: "vault")
     case "importGoogle": try importGoogle()

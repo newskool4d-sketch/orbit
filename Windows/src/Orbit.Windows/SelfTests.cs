@@ -44,8 +44,11 @@ internal static class SelfTests
             foreach(var bad in new[]{"https://orbit.invalid/","https://orbit.invalid/index.html?x=1","https://orbit.invalid/index.html#x","https://example.com/index.html","about:blank"})
                 Check(!BridgePolicy.Trusted(bad,BridgePolicy.Document),"untrusted-document");
             Check(BridgePolicy.Validate("{\"action\":\"refresh\",\"request\":\"1\"}",out _),"valid-message");
-            foreach(var bad in new[]{"{\"action\":\"launchAtLogin\",\"request\":\"1\"}","{\"action\":\"pin\",\"request\":\"1\",\"value\":\"true\"}","{\"action\":\"refresh\",\"request\":\"1\",\"path\":\"fixture\"}","{\"action\":\"refresh\",\"action\":\"quit\",\"request\":\"1\"}","{\"action\":\"openFile\",\"request\":\"1\",\"id\":\"../fixture\"}","{\"action\":\"theme\",\"request\":\"1\",\"value\":\"unknown\"}"})
+            Check(BridgePolicy.Validate("{\"action\":\"textSize\",\"request\":\"1\",\"value\":\"large\"}",out _),"valid-text-size");
+            Check(BridgePolicy.Validate("{\"action\":\"addDday\",\"request\":\"1\",\"title\":\"fixture\",\"targetDate\":\"2028-02-29\",\"pinned\":true}",out _),"valid-dday-message");
+            foreach(var bad in new[]{"{\"action\":\"launchAtLogin\",\"request\":\"1\"}","{\"action\":\"pin\",\"request\":\"1\",\"value\":\"true\"}","{\"action\":\"refresh\",\"request\":\"1\",\"path\":\"fixture\"}","{\"action\":\"refresh\",\"action\":\"quit\",\"request\":\"1\"}","{\"action\":\"openFile\",\"request\":\"1\",\"id\":\"../fixture\"}","{\"action\":\"theme\",\"request\":\"1\",\"value\":\"unknown\"}","{\"action\":\"textSize\",\"request\":\"1\",\"value\":\"huge\"}"})
                 Check(!BridgePolicy.Validate(bad,out _),"invalid-message");
+            Check(!BridgePolicy.Validate("{\"action\":\"addDday\",\"request\":\"1\",\"title\":\"fixture\",\"targetDate\":\"2027-02-29\",\"pinned\":false}",out _),"invalid-dday-date");
             Check(!BridgePolicy.Validate(new string('x',65537),out _),"message-size");
             Check(OAuthPolicy.Challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")=="E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM","pkce-vector");
             bool rejected=false;try{OAuthPolicy.Parameters("?state=a&state=b");}catch(InvalidDataException){rejected=true;}Check(rejected,"duplicate-state");
@@ -70,6 +73,8 @@ internal static class SelfTests
             var before=fake.Patches;try{await google.Complete(id,true,()=>{});}catch(InvalidOperationException){}
             Check(before==fake.Patches,"no-repeat-unknown-write");
             Check(!PathPolicy.Https("file:///fixture")&&!PathPolicy.Https("https://user:pass@example.com"),"external-link-policy");
+
+            DdaySelfTests.Run(Check);
 
             Check(ReparsePolicy.Cloud(0x9000001A)&&ReparsePolicy.Cloud(0x9000F01A)&&!ReparsePolicy.Cloud(0xA000000C),"cloud-tag-vs-symlink");
             var fixtureRoot=Path.Combine(Path.GetTempPath(),"Orbit-files-fixture-"+Guid.NewGuid().ToString("N"));

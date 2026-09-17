@@ -39,3 +39,11 @@ test('unavailable agent clicks never reach the native bridge', () => {
   listeners.click({ target: { closest: () => ({ disabled: true, dataset: { agent: 'fixture' }, getAttribute: () => 'true' }) } });
   assert.equal(calls.length, 0);
 });
+
+test('text size controls send only the selected supported value', () => {
+  const { listeners, calls } = fixture();
+  listeners.click({ target: { closest: () => ({ disabled: false, dataset: { textSize: 'large' }, getAttribute: () => null }) } });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].action, 'textSize');
+  assert.equal(calls[0].args.value, 'large');
+});

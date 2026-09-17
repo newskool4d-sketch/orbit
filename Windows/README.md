@@ -1,6 +1,6 @@
 # Orbit Windows 시험판
 
-Windows 11 x64에서 원본 Orbit UI를 실행하는 WPF/WebView2 호스트입니다. 2026-09-07 현재 이 PC에서 빌드 및 기본 연동을 검증했습니다. 전체 판정은 PARTIAL이며 세부 근거는 [VERIFICATION.md](VERIFICATION.md)를 확인하세요.
+Windows 11 x64에서 원본 Orbit UI를 실행하는 WPF/WebView2 호스트입니다. 2026-09-17 현재 이 PC에서 빌드·설치본 교체·D-day와 글자 크기 복원·배율 상당 렌더링을 검증했습니다. 전체 판정은 PARTIAL이며 세부 근거는 [VERIFICATION.md](VERIFICATION.md)를 확인하세요.
 
 ## 실행
 1. artifacts의 Orbit.Windows-날짜.zip을 원하는 폴더에 모두 압축 해제합니다.
@@ -11,7 +11,8 @@ Windows 11 x64에서 원본 Orbit UI를 실행하는 WPF/WebView2 호스트입�
 .NET 런타임을 포함하므로 별도 .NET 설치는 필요하지 않습니다. Microsoft Edge WebView2 Runtime은 필요하며 자동 설치하지 않습니다. 관리자 권한·시작프로그램 등록은 사용하지 않습니다. 코드 서명 및 설치 프로그램은 포함하지 않은 로컬 시험판입니다.
 
 ## 구현 범위
-- WPF 창, 알림 영역, 단일 인스턴스, 고정/숨김, WebView2 UI, 세 테마, Ctrl K.
+- WPF 창, 알림 영역, 단일 인스턴스, 고정/숨김, WebView2 UI, 세 테마, 세 단계 글자 크기, Ctrl K.
+- Google 연결 없이 사용하는 중요 날짜(D-day) 직접 등록, 편집, 중요 표시, 보관, 삭제와 로컬 저장.
 - Drive/Obsidian 파일 메타데이터, Claude Code 로컬 기록, Codex SQLite 최근 작업의 제한된 읽기.
 - Codex/Claude 설치 앱 열기. 기존 대화의 정확한 재개 및 같은 프로젝트 새 작업 생성은 구현하지 않았으며 카드에 작업 직접 선택을 안내합니다.
 - Google OAuth PKCE, Calendar 조회, Tasks 조회·완료·다시 열기 코드. 인증 정보는 Windows Credential Manager에 보관합니다.
@@ -26,17 +27,19 @@ Google Cloud 프로젝트에서 Calendar API와 Tasks API 및 OAuth 동의 화�
 
 ## 저장 위치와 제한
 - 설정: %LOCALAPPDATA%/Orbit/settings.json
+- 중요 날짜: %LOCALAPPDATA%/Orbit/ddays.json
 - WebView2 프로필: %LOCALAPPDATA%/Orbit/WebView2 (InPrivate 사용)
 - 자격증명: 현재 Windows 사용자의 Orbit.Windows/v1/ 접두사 항목
 - 개발 SDK·캐시: %LOCALAPPDATA%/OrbitDevelopment (배포판 실행에 불필요)
 
-현재 Codex 읽기는 이 PC에서 검증한 winsqlite3 3.51.1에 한정됩니다. 다른 버전은 읽기를 중단하고 오류 상태를 표시합니다. WAL이 있고 SHM이 없는 경우도 읽지 않습니다. 스캔은 깊이·항목 수·시간을 제한하므로 모든 기록을 보여 주지는 않습니다. 다중 모니터 배치, 배율별 동작, 절전 복귀는 추가 검증이 필요합니다.
+현재 Codex 읽기는 이 PC에서 검증한 winsqlite3 3.51.1에 한정됩니다. 다른 버전은 읽기를 중단하고 오류 상태를 표시합니다. WAL이 있고 SHM이 없는 경우도 읽지 않습니다. 스캔은 깊이·항목 수·시간을 제한하므로 모든 기록을 보여 주지는 않습니다. 100·125·150·200% 상당 렌더링 40조합과 Resume 처리 함수는 통과했으며, 실제 디스플레이 설정 전환·물리적 절전·다중 모니터 배치는 추가 수동 검증이 필요합니다.
 
 앱을 종료한 뒤 배포 폴더를 삭제하면 실행 파일을 제거할 수 있습니다. 설정·자격증명은 자동 삭제하지 않습니다. 원본 macOS Sources와 build.sh는 유지했습니다. 공용 UI 변경의 macOS 실제 실행은 미검증입니다.
 
 ## 개발
 Windows/scripts/build.ps1: 잠금 파일 기반 복원 및 Release 빌드.
 Windows/scripts/test.ps1 -NativeUi -Credential: JS, 네이티브, 합성 WAL, WebView2 및 별도 시험 자격증명 검증.
+Windows/scripts/test.ps1 -SourceOnly: 공용 UI 로직과 현재 C# D-day 저장소·브리지 정책을 시험합니다. C# 단독 시험에는 .NET 10 기반 PowerShell이 필요하며 WPF 앱 전체 빌드를 대체하지 않습니다. 네이티브 시험은 소스보다 오래된 실행 파일을 거부합니다.
 Windows/scripts/package.ps1: self-contained ZIP 생성 및 배포 실행 파일 검사.
 
 SDK 10.0.400과 WebView2 SDK 1.0.4191.47을 고정했습니다. 개발 스크립트는 SDK 최초 실행 인증서 생성을 비활성화합니다. 업데이트와 배포는 별도 작업입니다.

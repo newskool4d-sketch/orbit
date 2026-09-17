@@ -13,9 +13,12 @@ internal static class BridgePolicy
     private static readonly Dictionary<string, string[]> Fields = new()
     {
         ["ready"]=[], ["refresh"]=[], ["close"]=[], ["quit"]=[],
-        ["theme"]=["value"], ["pin"]=["value"], ["openFile"]=["id"],
+        ["theme"]=["value"], ["textSize"]=["value"], ["pin"]=["value"], ["openFile"]=["id"],
         ["openAgent"]=["id","mode"], ["openEvent"]=["id","meeting"],
         ["completeTask"]=["id","value"], ["openCalendar"]=[], ["openTasks"]=[],
+        ["addDday"]=["title","targetDate","pinned"],
+        ["updateDday"]=["id","title","targetDate","pinned"],
+        ["archiveDday"]=["id","value"], ["deleteDday"]=["id"],
         ["chooseDrive"]=[], ["chooseVault"]=[], ["chooseCodex"]=[], ["chooseClaude"]=[],
         ["importGoogle"]=[], ["connectGoogle"]=[], ["cancelGoogle"]=[],
         ["disconnectGoogle"]=[], ["googleHelp"]=[]
@@ -39,12 +42,19 @@ internal static class BridgePolicy
             foreach (var p in root.EnumerateObject())
             {
                 if (p.Name=="id" && (p.Value.ValueKind!=JsonValueKind.String || !Guid.TryParseExact(p.Value.GetString(),"N",out _))) return false;
-                if ((p.Name=="meeting" || p.Name=="value" && a.GetString()!="theme") && p.Value.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) return false;
+                if ((p.Name is "meeting" or "pinned" || p.Name=="value" && a.GetString() is not ("theme" or "textSize")) && p.Value.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) return false;
                 if (p.Name=="mode" && (p.Value.ValueKind!=JsonValueKind.String || p.Value.GetString() is not ("default" or "fallback"))) return false;
             }
             if (fields.Contains("id") && !root.TryGetProperty("id",out _)) return false;
             if (fields.Contains("value") && !root.TryGetProperty("value",out _)) return false;
             if (a.GetString()=="theme" && (root.GetProperty("value").ValueKind!=JsonValueKind.String || root.GetProperty("value").GetString() is not ("moss" or "pearl" or "cobalt"))) return false;
+            if (a.GetString()=="textSize" && (root.GetProperty("value").ValueKind!=JsonValueKind.String || root.GetProperty("value").GetString() is not ("normal" or "large" or "xlarge"))) return false;
+            if (a.GetString() is "addDday" or "updateDday")
+            {
+                if (!root.TryGetProperty("title",out var title) || title.ValueKind!=JsonValueKind.String || title.GetString() is not string titleValue || titleValue.Trim().Length is <1 or >120 || titleValue.Any(char.IsControl)) return false;
+                if (!root.TryGetProperty("targetDate",out var date) || date.ValueKind!=JsonValueKind.String || !root.TryGetProperty("pinned",out _)) return false;
+                try { DdayStore.ValidDate(date.GetString()!); } catch (InvalidOperationException) { return false; }
+            }
             message = root.Clone(); return true;
         } catch (JsonException) { return false; }
     }

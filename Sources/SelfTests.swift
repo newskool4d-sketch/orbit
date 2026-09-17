@@ -14,6 +14,43 @@ enum SelfTests {
         return false
       } catch { return true }
     }
+    let ddayRoot = FileManager.default.temporaryDirectory
+      .appendingPathComponent("Orbit-dday-fixture-" + UUID().uuidString, isDirectory: true)
+    let ddayURL = ddayRoot.appendingPathComponent("ddays.json")
+    do {
+      // Only this uniquely created fixture directory is removed; production data is never opened.
+      try FileManager.default.createDirectory(at: ddayRoot, withIntermediateDirectories: false)
+      defer { try? FileManager.default.removeItem(at: ddayRoot) }
+      let store = DdayStore(url: ddayURL)
+      try store.add(title: "합성 날짜", targetDate: "2028-02-29", pinned: true)
+      let id = store.items[0].id
+      check("Dday disk reload", DdayStore(url: ddayURL).items.count == 1)
+      try store.update(id: id, title: "합성 변경", targetDate: "2030-12-31", pinned: false)
+      check("Dday edit persisted", DdayStore(url: ddayURL).items.first?.targetDate == "2030-12-31")
+      try store.archive(id: id, value: true)
+      check("Dday archive persisted", DdayStore(url: ddayURL).items.first?.archived == true)
+      try store.archive(id: id, value: false)
+      check("Dday restore persisted", DdayStore(url: ddayURL).items.first?.archived == false)
+      for date in ["0000-01-01", "2027-02-29", "2026-04-31", "2026-1-01", "+026-01-01"] {
+        check("Dday invalid date", rejects { try DdayStore.validDate(date) })
+      }
+      check("Dday title bound", rejects { _ = try DdayStore.validTitle(String(repeating: "😀", count: 61)) })
+      try store.delete(id: id)
+      check("Dday delete persisted", DdayStore(url: ddayURL).items.isEmpty)
+      for damaged in ["{not-json", "{}", "{\"schemaVersion\":1}", "{\"schemaVersion\":2,\"items\":[]}"] {
+        try Data(damaged.utf8).write(to: ddayURL)
+        let blocked = DdayStore(url: ddayURL)
+        check("Dday damaged file preserved", !blocked.loadError.isEmpty && rejects {
+          try blocked.add(title: "fixture", targetDate: "2030-01-01", pinned: false)
+        } && (try? Data(contentsOf: ddayURL)) == Data(damaged.utf8))
+      }
+      try FileManager.default.removeItem(at: ddayURL)
+      let failing = DdayStore(url: ddayURL)
+      try FileManager.default.createDirectory(at: ddayURL, withIntermediateDirectories: false)
+      check("Dday failed save rollback", rejects {
+        try failing.add(title: "fixture", targetDate: "2030-01-01", pinned: false)
+      } && failing.items.isEmpty)
+    } catch { check("Dday fixture setup", false) }
     check(
       "PKCE RFC7636 S256 vector",
       OAuthHelpers.challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")

@@ -14,6 +14,7 @@ using System.Windows;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
+using Microsoft.Win32;
 using Forms=System.Windows.Forms;
 namespace Orbit;
 internal static class Program
@@ -30,7 +31,12 @@ internal static class Program
             Console.WriteLine(JsonSerializer.Serialize(new {files=data.Files.Count,agents=data.Agents.Count,statuses=data.Statuses.Select(s=>new {source=s["source"]?.ToString(),state=s["state"]?.ToString()})}));
             return 0;
         }
-        string key="Orbit.Windows."+WindowsIdentity.GetCurrent().User!.Value+"."+Process.GetCurrentProcess().SessionId;
+        var persistenceQa=args.Contains("--ui-persistence-smoke");
+        var qaInstance=args.Contains("--ui-smoke")||persistenceQa;
+        var qaDataRoot=persistenceQa?Environment.GetEnvironmentVariable("ORBIT_QA_DATA_ROOT"):null;
+        var qaPhase=persistenceQa?Environment.GetEnvironmentVariable("ORBIT_QA_PHASE"):null;
+        if(persistenceQa&&(!ValidQaRoot(qaDataRoot)||qaPhase is not ("seed" or "verify"))){Console.WriteLine(JsonSerializer.Serialize(new{test="restart-persistence",pass=false,error="invalid-qa-configuration"}));return 3;}
+        string key="Orbit.Windows."+WindowsIdentity.GetCurrent().User!.Value+"."+Process.GetCurrentProcess().SessionId+(qaInstance?".qa":"");
         using var mutex=new Mutex(true,@"Local\"+key,out bool first);
         if(!first) {
             try {using var client=new NamedPipeClientStream(".",key,PipeDirection.Out,PipeOptions.CurrentUserOnly);client.Connect(2000);client.Write(Encoding.ASCII.GetBytes("show"));return 0;}
@@ -38,7 +44,7 @@ internal static class Program
         }
         try {
             var app=new System.Windows.Application {ShutdownMode=ShutdownMode.OnExplicitShutdown};
-            var window=new OrbitWindow(args.Contains("--ui-smoke"),app,args.Contains("--hold"));
+            var window=new OrbitWindow(qaInstance,app,args.Contains("--hold"),qaDataRoot,qaPhase);
             app.Startup+=(_,_)=>{window.ShowPanel();};
             using var stop=new CancellationTokenSource();
             _=Task.Run(async()=>{
@@ -55,6 +61,15 @@ internal static class Program
         }catch {Forms.MessageBox.Show("Orbit을 시작하지 못했습니다. WebView2 설치와 앱 파일을 확인하세요.","Orbit");return 1;}
         finally{mutex.ReleaseMutex();}
     }
+    static bool ValidQaRoot(string? path)
+    {
+        if(string.IsNullOrWhiteSpace(path))return false;
+        try {
+            var root=Path.GetFullPath(path);
+            var allowed=Path.GetFullPath(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"OrbitDevelopment","persistence"))+Path.DirectorySeparatorChar;
+            return root.StartsWith(allowed,StringComparison.OrdinalIgnoreCase);
+        } catch{return false;}
+    }
 }
 internal sealed class OrbitWindow : Window
 {
@@ -64,19 +79,23 @@ internal sealed class OrbitWindow : Window
     readonly DispatcherTimer timer=new(){Interval=TimeSpan.FromSeconds(60)};
     readonly Settings settings;
     readonly Google google;
+    readonly DdayStore ddays;
     readonly System.Windows.Application app;
     readonly bool smoke;
     readonly bool hold;
+    readonly string? qaDataRoot;
+    readonly string? qaPhase;
     int showRequests;
     readonly HashSet<string> pending=new();
     LocalSnapshot local=new();
     bool ready,pinned,modal,refreshing,quitting;
     DateTime lastLocal=DateTime.MinValue;
-    public OrbitWindow(bool smoke,System.Windows.Application app,bool hold=false)
+    public OrbitWindow(bool smoke,System.Windows.Application app,bool hold=false,string? qaDataRoot=null,string? qaPhase=null)
     {
-        this.smoke=smoke;this.app=app;this.hold=hold;
+        this.smoke=smoke;this.app=app;this.hold=hold;this.qaDataRoot=qaDataRoot;this.qaPhase=qaPhase;
         settings=new();google=new(smoke?new MemorySecrets():null);
-        if(smoke) {
+        ddays=qaDataRoot!=null?new DdayStore(Path.Combine(qaDataRoot,"ddays.json")):smoke?DdayStore.Memory(new[]{new DdayEntry{Id=Guid.NewGuid().ToString("N"),Title="화면 점검일",TargetDate=DateOnly.FromDateTime(DateTime.Today.AddDays(7)).ToString("yyyy-MM-dd"),Pinned=true,CreatedAt=DateTimeOffset.UtcNow.ToString("O"),UpdatedAt=DateTimeOffset.UtcNow.ToString("O")}}):new DdayStore();
+        if(smoke&&qaDataRoot==null) {
             local.Agents.Add(new(){["id"]=Guid.NewGuid().ToString("N"),["provider"]="codex",["title"]="화면 점검용 작업",["project"]="합성 데이터",["updated"]=DateTimeOffset.UtcNow.ToUnixTimeSeconds(),["status"]="최근 기록",["openMode"]="appHome"});
             local.Agents.Add(new(){["id"]=Guid.NewGuid().ToString("N"),["provider"]="claude",["title"]="새 작업 안내 점검",["project"]="합성 데이터",["updated"]=DateTimeOffset.UtcNow.ToUnixTimeSeconds(),["status"]="최근 기록",["openMode"]="projectNew"});
         }
@@ -93,24 +112,25 @@ internal sealed class OrbitWindow : Window
         timer.Tick+=async(_,_)=>await Refresh(false);
         Loaded+=async(_,_)=>await Initialize();
         Closing+=(_,e)=>{if(!quitting){e.Cancel=true;Hide();}};
+        SystemEvents.PowerModeChanged+=OnPowerModeChanged;
     }
     static System.Drawing.Size SystemInformationIconSize()=>Forms.SystemInformation.SmallIconSize;
     public void ShowPanel()
     {
         showRequests++;
         var area=SystemParameters.WorkArea;Width=Math.Min(560,area.Width);Height=Math.Min(700,area.Height);
-        Left=area.Right-Width-8;Top=Math.Max(area.Top,area.Bottom-Height-8);Show();Activate();
+        Left=area.Right-Width-8;Top=Math.Max(area.Top,area.Bottom-Height-8);Show();Activate();if(ready)Publish();
     }
     async Task Initialize()
     {
         if(ready)return;
         try {
-            if(!smoke) {
-                var loaded=await Task.Run(Settings.Load);
-                settings.Theme=loaded.Theme;settings.Drive=loaded.Drive;settings.Vault=loaded.Vault;settings.Codex=loaded.Codex;settings.Claude=loaded.Claude;
+            if(!smoke||qaDataRoot!=null) {
+                var loaded=await Task.Run(()=>Settings.Load(qaDataRoot,qaDataRoot==null));
+                settings.Theme=loaded.Theme;settings.TextSize=loaded.TextSize;settings.Drive=loaded.Drive;settings.Vault=loaded.Vault;settings.Codex=loaded.Codex;settings.Claude=loaded.Claude;
             }
             _=CoreWebView2Environment.GetAvailableBrowserVersionString();
-            var profile=smoke?Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"OrbitDevelopment","qa-profile"):Path.Combine(Settings.DataRoot,"WebView2");
+            var profile=qaDataRoot!=null?Path.Combine(qaDataRoot,"WebView2"):smoke?Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"OrbitDevelopment","qa-profile"):Path.Combine(Settings.DataRoot,"WebView2");
             var env=await CoreWebView2Environment.CreateAsync(null,profile);
             var options=env.CreateCoreWebView2ControllerOptions();options.IsInPrivateModeEnabled=true;
             await web.EnsureCoreWebView2Async(env,options);
@@ -132,6 +152,12 @@ internal sealed class OrbitWindow : Window
             };
             core.NavigationCompleted+=async(_,e)=>{
                 if(!e.IsSuccess)return;ready=true;Publish();
+                if(qaDataRoot!=null) {
+                    await Task.Delay(200);
+                    var pass=await PersistenceUiTests.Run(core,qaPhase!);
+                    Exit(pass?0:1);
+                    return;
+                }
                 if(smoke) {
                     Console.WriteLine("UI_READY");Console.Out.Flush();
                     await Task.Delay(hold?4000:500);
@@ -143,12 +169,20 @@ internal sealed class OrbitWindow : Window
                     for(int attempt=0;attempt<20&&!bridgeAck;attempt++){await Task.Delay(50);bridgeAck=await core.ExecuteScriptAsync("window.__orbitQaAck")== "true";}
                     pass&=bridgeAck;
                     var qa=Environment.GetEnvironmentVariable("ORBIT_QA_DIR");
+                    pass&=await DdayUiTests.Run(core,qa,HandleResume);
+                    pass&=await DisplayScaleUiTests.Run(web,qa);
                     if(!string.IsNullOrEmpty(qa)) {
                         Directory.CreateDirectory(qa);
                         foreach(var theme in new[]{"moss","pearl","cobalt"}) {
                             await core.ExecuteScriptAsync("state.theme='"+theme+"';render();");
                             await Task.Delay(100);
                             using var shot=File.Create(Path.Combine(qa,"windows-"+theme+".png"));
+                            await core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png,shot);
+                        }
+                        foreach(var textSize in new[]{"normal","large","xlarge"}) {
+                            await core.ExecuteScriptAsync("state.theme='moss';state.settings.textSize='"+textSize+"';render();");
+                            await Task.Delay(100);
+                            using var shot=File.Create(Path.Combine(qa,"windows-text-"+textSize+".png"));
                             await core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png,shot);
                         }
                     }
@@ -184,10 +218,10 @@ internal sealed class OrbitWindow : Window
         var statuses=local.Statuses.Select(x=>(JsonObject)x.DeepClone()).ToList();
         foreach(var source in new[]{"calendar","tasks"})statuses.Add(new(){["source"]=source,["state"]=google.Error!=null?"error":google.Connected?"connected":"disconnected",["message"]=google.Error??(google.Connected?"Google 연결됨":"Google 연결이 필요합니다."),["updated"]=google.Updated,["stale"]=google.Error!=null});
         Send(new(){["kind"]="snapshot",["protocolVersion"]=2,["platform"]="windows",
-            ["capabilities"]=new JsonObject{["launchAtLogin"]=false,["chooseAgentRoots"]=true,["agentDesktopOpen"]=true},
+            ["capabilities"]=new JsonObject{["launchAtLogin"]=false,["chooseAgentRoots"]=true,["agentDesktopOpen"]=true,["dday"]=true},
             ["theme"]=settings.Theme,["pinned"]=pinned,["refreshing"]=refreshing,
-            ["files"]=Array(local.Files),["agents"]=Array(local.Agents),["events"]=Array(google.Events),["tasks"]=Array(google.Tasks),["statuses"]=Array(statuses),
-            ["settings"]=new JsonObject{["drive"]=Leaf(settings.Drive),["vault"]=Leaf(settings.Vault),["codex"]=Leaf(settings.Codex),["claude"]=Leaf(settings.Claude),["googleConnected"]=google.Connected,["googleConfigured"]=google.Configured,["googleAuthorizing"]=google.Authorizing}});
+            ["files"]=Array(local.Files),["agents"]=Array(local.Agents),["events"]=Array(google.Events),["tasks"]=Array(google.Tasks),["ddays"]=ddays.Snapshot(),["ddayError"]=ddays.Error,["statuses"]=Array(statuses),
+            ["settings"]=new JsonObject{["textSize"]=settings.TextSize,["drive"]=Leaf(settings.Drive),["vault"]=Leaf(settings.Vault),["codex"]=Leaf(settings.Codex),["claude"]=Leaf(settings.Claude),["googleConnected"]=google.Connected,["googleConfigured"]=google.Configured,["googleAuthorizing"]=google.Authorizing}});
     }
     static string Leaf(string path)=>string.IsNullOrWhiteSpace(path)?"":Path.GetFileName(Path.TrimEndingDirectorySeparator(path));
     async Task Refresh(bool force)
@@ -202,15 +236,35 @@ internal sealed class OrbitWindow : Window
             await google.Refresh();
         }finally{refreshing=false;Publish();}
     }
+    void OnPowerModeChanged(object sender,PowerModeChangedEventArgs e)
+    {
+        if(e.Mode==PowerModes.Resume)_=Dispatcher.InvokeAsync(HandleResume);
+    }
+    async Task HandleResume()
+    {
+        if(!IsVisible)return;
+        lastLocal=DateTime.MinValue;
+        timer.Stop();timer.Start();
+        Publish();
+        if(ready&&web.CoreWebView2!=null)await web.CoreWebView2.ExecuteScriptAsync("refreshDdayClock()");
+        if(!smoke)await Refresh(true);
+    }
+    void SaveSettings()=>settings.Save(qaDataRoot);
     async Task Dispatch(JsonElement message)
     {
         var action=message.GetProperty("action").GetString();string Id()=>message.GetProperty("id").GetString()!;bool Value()=>message.GetProperty("value").GetBoolean();
-        if(smoke){if(action=="ready"){ready=true;Publish();}return;}
+        if(smoke&&qaDataRoot==null&&action is not ("addDday" or "updateDday" or "archiveDday" or "deleteDday")){if(action=="ready"){ready=true;Publish();}return;}
+        if(qaDataRoot!=null&&action is not ("ready" or "textSize" or "addDday" or "updateDday" or "archiveDday" or "deleteDday"))return;
         switch(action)
         {
             case "ready":ready=true;await Refresh(false);break;
             case "refresh":await Refresh(true);break;
-            case "theme":settings.Theme=message.GetProperty("value").GetString()!;settings.Save();Publish();break;
+            case "theme":settings.Theme=message.GetProperty("value").GetString()!;SaveSettings();Publish();break;
+            case "textSize":
+                var previousTextSize=settings.TextSize;
+                settings.TextSize=message.GetProperty("value").GetString()!;
+                try { SaveSettings(); } catch { settings.TextSize=previousTextSize;Publish();throw; }
+                Publish();break;
             case "pin":pinned=Value();Publish();break;
             case "close":Hide();break;
             case "quit":Exit();break;
@@ -222,7 +276,7 @@ internal sealed class OrbitWindow : Window
                         var path=picker.FolderName;
                         if(!ReparsePolicy.Safe(path))throw new InvalidOperationException();
                         switch(action){case "chooseDrive":settings.Drive=path;break;case "chooseVault":settings.Vault=path;break;case "chooseCodex":settings.Codex=path;break;case "chooseClaude":settings.Claude=path;break;}
-                        settings.Save();local=new();lastLocal=DateTime.MinValue;Publish();
+                        SaveSettings();local=new();lastLocal=DateTime.MinValue;Publish();
                     }
                 }finally{modal=false;}
                 await Refresh(true);break;
@@ -243,8 +297,12 @@ internal sealed class OrbitWindow : Window
             case "cancelGoogle":google.Cancel();break;
             case "disconnectGoogle":await google.Disconnect();Publish();break;
             case "completeTask":await google.Complete(Id(),Value(),Publish);break;
+            case "addDday":ddays.Add(message.GetProperty("title").GetString()!,message.GetProperty("targetDate").GetString()!,message.GetProperty("pinned").GetBoolean());Publish();break;
+            case "updateDday":ddays.Update(Id(),message.GetProperty("title").GetString()!,message.GetProperty("targetDate").GetString()!,message.GetProperty("pinned").GetBoolean());Publish();break;
+            case "archiveDday":ddays.Archive(Id(),Value());Publish();break;
+            case "deleteDday":ddays.Delete(Id());Publish();break;
             case "googleHelp":Google.Open("https://developers.google.com/identity/protocols/oauth2/native-app");break;
         }
     }
-    void Exit(int code=0){quitting=true;timer.Stop();tray.Visible=false;tray.Dispose();orbitIcon.Dispose();google.Dispose();web.Dispose();app.Shutdown(code);}
+    void Exit(int code=0){quitting=true;SystemEvents.PowerModeChanged-=OnPowerModeChanged;timer.Stop();tray.Visible=false;tray.Dispose();orbitIcon.Dispose();google.Dispose();web.Dispose();app.Shutdown(code);}
 }

@@ -1,0 +1,348 @@
+:root {
+  --font-body: 14px;
+  --font-meta: 12px;
+  --font-micro: 11px;
+  --font-title: 18px;
+  --font-display: 26px;
+  --glass-fill: rgba(245, 255, 247, .045);
+  --glass-low: rgba(245, 255, 247, .018);
+  --glass-highlight: rgba(255, 255, 255, .075);
+  --glass-edge: rgba(213, 246, 156, .17);
+  --glass-edge-strong: rgba(213, 246, 156, .28);
+  --glass-shadow: 0 12px 34px rgba(3, 12, 7, .22), inset 0 1px 0 rgba(255, 255, 255, .055);
+}
+
+body[data-theme="pearl"] {
+  --glass-fill: rgba(255, 255, 255, .58);
+  --glass-low: rgba(244, 242, 232, .32);
+  --glass-highlight: rgba(255, 255, 255, .82);
+  --glass-edge: rgba(74, 103, 65, .18);
+  --glass-edge-strong: rgba(74, 103, 65, .29);
+  --glass-shadow: 0 12px 32px rgba(47, 54, 42, .09), inset 0 1px 0 rgba(255, 255, 255, .9);
+}
+
+body[data-theme="cobalt"] {
+  --glass-fill: rgba(176, 197, 255, .055);
+  --glass-low: rgba(176, 197, 255, .018);
+  --glass-highlight: rgba(220, 229, 255, .08);
+  --glass-edge: rgba(176, 197, 255, .2);
+  --glass-edge-strong: rgba(176, 197, 255, .32);
+  --glass-shadow: 0 12px 36px rgba(3, 8, 25, .28), inset 0 1px 0 rgba(220, 229, 255, .06);
+}
+
+body[data-text-size="large"] {
+  --font-body: 16px;
+  --font-meta: 14px;
+  --font-micro: 12px;
+  --font-title: 20px;
+  --font-display: 28px;
+}
+
+body[data-text-size="xlarge"] {
+  --font-body: 18px;
+  --font-meta: 16px;
+  --font-micro: 14px;
+  --font-title: 22px;
+  --font-display: 30px;
+}
+
+body {
+  font-family: "Segoe UI Variable Text", "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+  font-size: var(--font-body);
+  font-synthesis: none;
+  font-variant-ligatures: common-ligatures contextual;
+  text-rendering: optimizeLegibility;
+}
+h1,
+.brand,
+.focus h2,
+.settings-heading h2 {
+  font-family: "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI", "Malgun Gothic", sans-serif;
+}
+.brand { font-size: var(--font-title); }
+.date,
+.focus p.meta,
+.section-heading small,
+.text,
+.file-meta,
+.agent-provider,
+.agent-project,
+.agent-bottom,
+.filters button,
+.subtle,
+#file-list .file-meta,
+#agent-list .agent-project,
+#agent-list .agent-bottom,
+.agenda button,
+.source-warning,
+.setting-card .help,
+.help,
+.path-row .path,
+.connection-row small,
+.connection-row .badge,
+.settings-bottom,
+.calendar-day h3,
+.calendar-event > .event-time,
+.event-copy small,
+.agent-action { font-size: var(--font-meta); }
+
+.overline,
+.progress span,
+.count,
+.tag,
+kbd,
+footer,
+#connections button { font-size: var(--font-micro); }
+
+h1,
+.greeting h1 { font-size: var(--font-display); }
+
+.focus h2,
+.settings-heading h2 { font-size: var(--font-title); }
+
+.greeting p,
+.primary,
+.secondary,
+h2,
+.task,
+.file-name,
+.agent-title,
+.search input,
+#file-list .file-name,
+#agent-list .agent-title,
+.empty,
+.quiet,
+.preview-banner,
+.settings-scroll h3,
+.themes button,
+.text-sizes button,
+.setting-card p,
+.path-row strong,
+.connection-row,
+.login-option,
+.toast,
+.event-copy strong { font-size: var(--font-body); }
+
+.tab { font-size: var(--font-body); }
+.focus,
+.task,
+.file,
+.agent,
+.calendar-event { line-height: 1.5; }
+.focus { flex-wrap: wrap; }
+.focus .primary { margin-left: auto; }
+.task-name,
+.file-name,
+.file-meta,
+.agent-project { overflow-wrap: anywhere; }
+
+.themes,
+.text-sizes {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.text-sizes button {
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--muted);
+  padding: 10px 15px;
+}
+
+.text-sizes button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--tag);
+  color: var(--accent);
+}
+
+.focus,
+.file,
+.agent,
+.calendar-event,
+.setting-card,
+#dday-form,
+.dday-card,
+.search,
+.agenda button,
+.empty {
+  background: linear-gradient(145deg, var(--glass-highlight), var(--glass-fill) 42%, var(--glass-low));
+  border-color: var(--glass-edge);
+  box-shadow: var(--glass-shadow);
+  -webkit-backdrop-filter: blur(18px) saturate(122%);
+  backdrop-filter: blur(18px) saturate(122%);
+}
+
+.focus {
+  background: linear-gradient(130deg, var(--glass-highlight), var(--tag) 54%, var(--glass-fill));
+}
+
+.file,
+.agent,
+.dday-card {
+  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+
+.file:hover,
+.agent:hover,
+.dday-card:hover {
+  border-color: var(--glass-edge-strong);
+  box-shadow: 0 15px 38px rgba(3, 10, 8, .26), inset 0 1px 0 rgba(255, 255, 255, .08);
+  transform: translateY(-1px);
+}
+
+body[data-theme="pearl"] .file:hover,
+body[data-theme="pearl"] .agent:hover,
+body[data-theme="pearl"] .dday-card:hover {
+  box-shadow: 0 15px 34px rgba(47, 54, 42, .12), inset 0 1px 0 rgba(255, 255, 255, .94);
+}
+
+body[data-text-size="large"] nav,
+body[data-text-size="xlarge"] nav { gap: 16px; }
+
+body[data-text-size="large"] .file-grid,
+body[data-text-size="large"] .agent-grid,
+body[data-text-size="xlarge"] .file-grid,
+body[data-text-size="xlarge"] .agent-grid { grid-template-columns: 1fr; }
+
+body[data-text-size="large"] .greeting,
+body[data-text-size="xlarge"] .greeting {
+  padding-top: 17px;
+  padding-bottom: 15px;
+}
+
+body[data-text-size="large"] .file-name,
+body[data-text-size="large"] .file-meta,
+body[data-text-size="large"] .agent-project,
+body[data-text-size="xlarge"] .file-name,
+body[data-text-size="xlarge"] .file-meta,
+body[data-text-size="xlarge"] .agent-project { white-space: normal; }
+
+body[data-text-size="xlarge"] .focus { align-items: flex-start; }
+body[data-text-size="xlarge"] .task {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+body[data-text-size="xlarge"] .task-name { flex-basis: calc(100% - 28px); }
+body[data-text-size="xlarge"] .tag {
+  margin-left: 26px;
+  max-width: calc(100% - 26px);
+}
+body[data-text-size="xlarge"] .calendar-event {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+body[data-text-size="xlarge"] .calendar-event > .event-time { width: 100%; }
+body[data-text-size="xlarge"] .settings-scroll {
+  padding-left: 20px;
+  padding-right: 20px;
+}
+body[data-text-size="xlarge"] .setting-links,
+body[data-text-size="xlarge"] .settings-bottom {
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+#dday-manager {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+}
+
+.dday-list { display: grid; gap: 7px; }
+.dday-card {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--card);
+  text-align: left;
+}
+.dday-card:hover { border-color: var(--dim); }
+.dday-count {
+  min-width: 54px;
+  color: var(--accent);
+  font-size: var(--font-body);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.dday-card.past .dday-count,
+.dday-count.past { color: var(--orange); }
+.dday-copy { min-width: 0; flex: 1; }
+.dday-copy strong { display: block; overflow-wrap: anywhere; font-size: var(--font-body); }
+.dday-copy small { display: block; margin-top: 4px; color: var(--dim); font-size: var(--font-meta); }
+.dday-card > svg { width: 12px; height: 12px; color: var(--dim); }
+
+#dday-form {
+  margin-top: 20px;
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+}
+.field { display: grid; gap: 7px; margin-bottom: 13px; color: var(--muted); font-size: var(--font-meta); }
+.field input {
+  width: 100%;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--font-body);
+}
+.dday-pin { margin: 4px 0 0; }
+.form-error { margin: 10px 0 0; color: var(--orange); font-size: var(--font-meta); }
+.dday-manage { padding: 13px 0; border-bottom: 1px solid var(--line); }
+.dday-manage.archived { opacity: .72; }
+.dday-main { display: flex; gap: 11px; align-items: flex-start; }
+.dday-actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 9px 0 0 65px; }
+.dday-delete-confirm {
+  overflow-wrap: anywhere;
+  margin: 10px 0 0 65px;
+  padding: 10px;
+  border: 1px solid var(--orange);
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: var(--font-meta);
+}
+.dday-delete-confirm button { margin: 8px 8px 0 0; }
+
+body[data-text-size="xlarge"] .dday-card,
+body[data-text-size="xlarge"] .dday-main { align-items: flex-start; }
+body[data-text-size="xlarge"] .dday-actions,
+body[data-text-size="xlarge"] .dday-delete-confirm { margin-left: 0; }
+
+@media (max-width: 430px) {
+  footer {
+    align-items: flex-start;
+    gap: 8px 12px;
+    flex-wrap: wrap;
+  }
+  #connections {
+    flex: 1 1 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+  #search-shortcut { margin-left: auto; }
+}
+
+@media (max-width: 320px) {
+  nav { gap: 4px; }
+  .tab {
+    white-space: nowrap;
+    font-size: var(--font-meta);
+  }
+  .count {
+    margin-left: 2px;
+    padding-left: 3px;
+    padding-right: 3px;
+  }
+}

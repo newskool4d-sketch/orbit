@@ -103,6 +103,17 @@ final class Preferences {
       if ["moss", "pearl", "cobalt"].contains(newValue) { defaults.set(newValue, forKey: "theme") }
     }
   }
+  var textSize: String {
+    get {
+      let value = defaults.string(forKey: "textSize") ?? "normal"
+      return ["normal", "large", "xlarge"].contains(value) ? value : "normal"
+    }
+    set {
+      if ["normal", "large", "xlarge"].contains(newValue) {
+        defaults.set(newValue, forKey: "textSize")
+      }
+    }
+  }
   var drive: String {
     get { defaults.string(forKey: "drive") ?? Self.detectDrive() }
     set { defaults.set(newValue, forKey: "drive") }
