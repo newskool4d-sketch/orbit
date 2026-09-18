@@ -20,7 +20,7 @@ Windows 11 Education x64 10.0.26200, .NET SDK 10.0.400, WebView2 Runtime 152.0.4
 | 배율 상당 렌더링 | PASS | 현재 1536×816 작업 영역에서 100·125·150·200%의 논리 영역을 재현하고 보통·아주 크게 × 5개 화면 40조합의 넘침·겹침 검사와 캡처 확인 |
 | 실제 OS 배율 | PASS(장치 범위) | 앱 창 DPI 120·144·168에서 125·150·175%를 확인하고 각 배율에서 25개 화면 캡처와 UI 검사를 통과. 이 장치는 100·200%를 적용하지 못해 배율 상당 검사로 보완 |
 | 재시작 복원 | PASS | 격리 저장소에서 앱 프로세스를 두 번 실행해 D-day 1개와 `xlarge` 복원, 2차 실행의 저장 파일 해시 불변 확인 |
-| 키보드·Resume | PASS | 실제 WebView2에서 Tab/Shift+Tab·Esc·Ctrl K를 합성 입력으로 확인. Modern Standby 506→507 물리 절전·복귀 후 동일 PID·시작 시각, 표시 창, 사용자 데이터 해시 불변 확인 |
+| 키보드·Resume | PASS | 실제 WebView2 합성 입력과 사용자 실기기 확인에서 Tab/Shift+Tab·Esc·Ctrl K가 정상 작동. Modern Standby 506→507 물리 절전·복귀 후 동일 PID·시작 시각, 표시 창, 사용자 데이터 해시 불변 확인 |
 | 설치본 교체 | PASS | `%LOCALAPPDATA%/Programs/Orbit`에서 후보 DLL 해시 일치, 자체 시험·UI smoke, 바로가기와 사용자 설정 불변 확인 |
 | 중복 실행 | PASS | 첫 프로세스 showRequests=2, 두 프로세스 모두 exit 0 |
 | Codex·Claude 앱 실행 | PASS | 설치 앱 활성화 및 프로세스 생존. 메시지 전송 없음 |

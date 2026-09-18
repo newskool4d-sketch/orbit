@@ -19,6 +19,7 @@
 | 빌드 | PASS | `Windows/scripts/package.ps1`: Release 빌드 경고 0·오류 0 | 없음 |
 | 설치본 | PASS | `%LOCALAPPDATA%/Programs/Orbit` 교체, 후보 DLL 해시 일치, 시작 메뉴 바로가기·사용자 설정 불변 | 이전 설치본 롤백 폴더 유지 |
 | 배율 화면 | PASS(장치 범위) | 실제 125·150·175%에서 각 25개 캡처와 화면 확인. 100·125·150·200% 상당 × 보통·아주 크게 × 5개 화면 40조합 통과 | 장치에서 100·200% 실제 적용 불가, 다중 모니터 미검증 |
+| 실제 키보드 | PASS | 사용자가 Tab·Shift+Tab·Esc·Ctrl K와 D-day 조작의 정상 작동을 실기기에서 확인 | 없음 |
 | 물리 절전 복귀 | PASS | Modern Standby Kernel-Power 506→507, 동일 PID·시작 시각, 표시 창, 사용자 데이터 해시 불변 | 장시간 절전은 별도 |
 | 시각 완성도 | PASS | Moss·Pearl·Midnight 글래스 표면과 Segoe UI Variable 글꼴 적용, 설치본 세 테마 캡처 확인 | 실제 사용자 선호 평가는 별도 |
 | 패키지 | PASS | `Orbit.Windows-<빌드시각>.zip` self-contained win-x64 | 코드 서명 없음 |
