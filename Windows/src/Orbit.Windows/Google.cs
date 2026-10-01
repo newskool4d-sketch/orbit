@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -22,8 +23,12 @@ internal sealed class Google : IDisposable
     internal readonly Dictionary<string,(string Link,string Meeting)> EventMap=new();
     public List<JsonObject> Events {get;private set;}=[];
     public List<JsonObject> Tasks {get;private set;}=[];
-    public string? Error {get;private set;}
-    public double Updated {get;private set;}
+    public string? CalendarError {get;private set;}
+    public string? TasksError {get;private set;}
+    public double CalendarUpdated {get;private set;}
+    public double TasksUpdated {get;private set;}
+    public string? Error=>CalendarError??TasksError;
+    const string SyncError="Google 동기화 실패 · 마지막 데이터 유지. 연결 상태를 확인하세요.";
     public bool Authorizing=>auth!=null;
     public bool Configured=>secrets.Get("clientId")!=null;
     public bool Connected=>secrets.Get("refresh")!=null;
@@ -32,7 +37,7 @@ internal sealed class Google : IDisposable
         http=new(handler??new HttpClientHandler{AllowAutoRedirect=false}){Timeout=TimeSpan.FromSeconds(20)};
     }
     static string S(JsonNode? n)=>n is JsonValue v&&v.TryGetValue<string>(out var s)?s:"";
-    void Clear(){Events=[];Tasks=[];ids.Clear();EventMap.Clear();Updated=0;Error=null;}
+    void Clear(){Events=[];Tasks=[];ids.Clear();EventMap.Clear();CalendarUpdated=TasksUpdated=0;CalendarError=TasksError=null;}
     public async Task Import(string path) {
         if(new FileInfo(path).Length>65536)throw new InvalidOperationException("OAuth JSON 파일 크기를 확인하세요.");
         var c=JsonNode.Parse(await File.ReadAllTextAsync(path))?["installed"];
@@ -114,32 +119,65 @@ internal sealed class Google : IDisposable
         }
         throw new InvalidOperationException("Google 조회 범위 초과");
     }
-    static double Stamp(JsonNode? n)=>DateTimeOffset.TryParse(S(n),out var dt)?dt.ToUnixTimeSeconds():0;
-    public async Task Refresh() {
+    internal static bool TryStamp(JsonNode? value,bool allDay,out double stamp)
+    {
+        stamp=0;
+        var text=S(value);
+        if(allDay) {
+            if(!DateOnly.TryParseExact(text,"yyyy-MM-dd",CultureInfo.InvariantCulture,DateTimeStyles.None,out var day)
+                || day.ToString("yyyy-MM-dd",CultureInfo.InvariantCulture)!=text)return false;
+            var midnight=day.ToDateTime(TimeOnly.MinValue);
+            try {stamp=new DateTimeOffset(midnight,TimeZoneInfo.Local.GetUtcOffset(midnight)).ToUnixTimeSeconds();return true;}
+            catch(ArgumentException){return false;}
+        }
+        if(!DateTimeOffset.TryParse(text,CultureInfo.InvariantCulture,DateTimeStyles.None,out var date))return false;
+        stamp=date.ToUnixTimeSeconds();return true;
+    }
+    public async Task Refresh(Action? changed=null) {
         if(Authorizing)return;
         await gate.WaitAsync();
         try {
             if(!Connected){Clear();return;}
-            var events=new List<JsonObject>();var links=new Dictionary<string,(string,string)>();
-            foreach(var calendar in (await Pages("calendar/v3/users/me/calendarList")).Where(c=>c["selected"]?.GetValue<bool>()==true)) {
-                var start=Uri.EscapeDataString(new DateTimeOffset(DateTime.Today).ToString("o"));var end=Uri.EscapeDataString(new DateTimeOffset(DateTime.Today.AddDays(7)).ToString("o"));
-                foreach(var e in await Pages($"calendar/v3/calendars/{Uri.EscapeDataString(S(calendar["id"]))}/events?singleEvents=true&orderBy=startTime&timeMin={start}&timeMax={end}")) {
-                    if(S(e["status"])=="cancelled")continue;
-                    if(e["attendees"] is JsonArray attendees&&attendees.OfType<JsonObject>().Any(a=>a["self"]?.GetValue<bool>()==true&&S(a["responseStatus"])=="declined"))continue;
-                    var id=Guid.NewGuid().ToString("N");var meeting=S(e["hangoutLink"]);links[id]=(S(e["htmlLink"]),meeting);
-                    events.Add(new(){["id"]=id,["title"]=S(e["summary"]),["calendar"]=S(calendar["summary"]),["start"]=Stamp(e["start"]?["dateTime"]??e["start"]?["date"]),["end"]=Stamp(e["end"]?["dateTime"]??e["end"]?["date"]),["allDay"]=e["start"]?["date"]!=null,["hasMeeting"]=PathPolicy.Https(meeting)});
-                }
+            try {await RefreshCalendar();CalendarUpdated=DateTimeOffset.UtcNow.ToUnixTimeSeconds();CalendarError=null;}
+            catch {CalendarError=SyncError;}
+            finally {changed?.Invoke();}
+            try {await RefreshTasks();TasksUpdated=DateTimeOffset.UtcNow.ToUnixTimeSeconds();TasksError=null;}
+            catch {TasksError=SyncError;}
+            finally {changed?.Invoke();}
+        }catch{CalendarError=TasksError=SyncError;}finally{gate.Release();}
+    }
+    async Task RefreshCalendar()
+    {
+        var events=new List<JsonObject>();var links=new Dictionary<string,(string,string)>();
+        foreach(var calendar in (await Pages("calendar/v3/users/me/calendarList")).Where(c=>c["selected"]?.GetValue<bool>()==true)) {
+            var start=Uri.EscapeDataString(new DateTimeOffset(DateTime.Today).ToString("o"));var end=Uri.EscapeDataString(new DateTimeOffset(DateTime.Today.AddDays(7)).ToString("o"));
+            foreach(var e in await Pages($"calendar/v3/calendars/{Uri.EscapeDataString(S(calendar["id"]))}/events?singleEvents=true&orderBy=startTime&timeMin={start}&timeMax={end}")) {
+                if(S(e["status"])=="cancelled")continue;
+                if(e["attendees"] is JsonArray attendees&&attendees.OfType<JsonObject>().Any(a=>a["self"]?.GetValue<bool>()==true&&S(a["responseStatus"])=="declined"))continue;
+                var allDay=e["start"]?["date"]!=null;
+                if(!TryStamp(e["start"]?[allDay?"date":"dateTime"],allDay,out var eventStart)
+                    || !TryStamp(e["end"]?[allDay?"date":"dateTime"],allDay,out var eventEnd))continue;
+                var id=Guid.NewGuid().ToString("N");var meeting=S(e["hangoutLink"]);
+                if(meeting.Length==0&&e["conferenceData"]?["entryPoints"] is JsonArray entryPoints)
+                    meeting=S(entryPoints.OfType<JsonObject>().FirstOrDefault(p=>S(p["entryPointType"])=="video")?["uri"]);
+                if(!PathPolicy.Https(meeting))meeting="";
+                links[id]=(S(e["htmlLink"]),meeting);
+                events.Add(new(){["id"]=id,["title"]=S(e["summary"]),["calendar"]=S(calendar["summary"]),["start"]=eventStart,["end"]=eventEnd,["allDay"]=allDay,["hasMeeting"]=meeting.Length>0});
             }
-            var tasks=new List<JsonObject>();var map=new Dictionary<string,(string,string)>();
-            foreach(var list in await Pages("tasks/v1/users/@me/lists"))
-            foreach(var task in await Pages($"tasks/v1/lists/{Uri.EscapeDataString(S(list["id"]))}/tasks?showCompleted=true&showHidden=true")) {
-                if(task["deleted"]?.GetValue<bool>()==true)continue;
-                var key=(S(list["id"]),S(task["id"]));var id=ids.FirstOrDefault(p=>p.Value==key).Key??Guid.NewGuid().ToString("N");map[id]=key;var due=S(task["due"]);
-                tasks.Add(new(){["id"]=id,["title"]=S(task["title"]),["list"]=S(list["title"]),["due"]=due.Length>=10?due[..10]:"",["completed"]=S(task["status"])=="completed",["mutationState"]="idle"});
-            }
-            Events=events.OrderBy(e=>e["start"]!.GetValue<double>()).ToList();Tasks=tasks;ids.Clear();foreach(var (id,key) in map)ids[id]=key;
-            EventMap.Clear();foreach(var (id,link) in links)EventMap[id]=link;Updated=DateTimeOffset.UtcNow.ToUnixTimeSeconds();Error=null;
-        }catch{Error="Google 동기화 실패 · 마지막 데이터 유지. 연결 상태를 확인하세요.";}finally{gate.Release();}
+        }
+        Events=events.OrderBy(e=>e["start"]!.GetValue<double>()).ToList();
+        EventMap.Clear();foreach(var (id,link) in links)EventMap[id]=link;
+    }
+    async Task RefreshTasks()
+    {
+        var tasks=new List<JsonObject>();var map=new Dictionary<string,(string,string)>();
+        foreach(var list in await Pages("tasks/v1/users/@me/lists"))
+        foreach(var task in await Pages($"tasks/v1/lists/{Uri.EscapeDataString(S(list["id"]))}/tasks?showCompleted=true&showHidden=true")) {
+            if(task["deleted"]?.GetValue<bool>()==true)continue;
+            var key=(S(list["id"]),S(task["id"]));var id=ids.FirstOrDefault(p=>p.Value==key).Key??Guid.NewGuid().ToString("N");map[id]=key;var due=S(task["due"]);
+            tasks.Add(new(){["id"]=id,["title"]=S(task["title"]),["list"]=S(list["title"]),["due"]=due.Length>=10?due[..10]:"",["completed"]=S(task["status"])=="completed",["mutationState"]="idle"});
+        }
+        Tasks=tasks;ids.Clear();foreach(var (id,key) in map)ids[id]=key;
     }
     public async Task Complete(string id,bool completed,Action changed) {
         if(Authorizing)throw new InvalidOperationException("로그인 중에는 변경할 수 없습니다.");
@@ -152,8 +190,10 @@ internal sealed class Google : IDisposable
                 JsonObject result;
                 try{result=await Api(path,HttpMethod.Patch,completed?new(){["status"]="completed"}:new(){["status"]="needsAction",["completed"]=null});}
                 catch{result=await Api(path);}
+                if(S(result["status"]) is not ("completed" or "needsAction"))throw new InvalidDataException();
                 task["completed"]=S(result["status"])=="completed";task["mutationState"]="idle";
             }catch{task["mutationState"]="unknown";throw new InvalidOperationException("반영 여부 확인 중입니다. 새로고침하세요.");}finally{changed();}
+            if(task["completed"]!.GetValue<bool>()!=completed)throw new InvalidOperationException("Google Tasks에 변경을 저장하지 못했습니다. 연결 상태를 확인하고 다시 시도하세요.");
         }finally{gate.Release();}
     }
     public static void Open(string url) {

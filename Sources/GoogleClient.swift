@@ -186,7 +186,7 @@ typealias HTTPTransport = (URLRequest) async throws -> (Data, HTTPURLResponse)
     let f = ISO8601DateFormatter()
     var result = [CalendarEntry]()
     for calendar in calendars
-    where calendar["selected"] as? Bool != false && calendar["hidden"] as? Bool != true {
+    where Self.isSelectedCalendar(calendar) {
       guard let id = calendar["id"] as? String else { continue }
       let rows = try await pages(
         path: "/calendar/v3/calendars/\(id)/events",
@@ -202,6 +202,9 @@ typealias HTTPTransport = (URLRequest) async throws -> (Data, HTTPURLResponse)
       }
     }
     return result.sorted { $0.start < $1.start }
+  }
+  static func isSelectedCalendar(_ calendar: [String: Any]) -> Bool {
+    calendar["selected"] as? Bool == true && calendar["hidden"] as? Bool != true
   }
   static func parseEvent(_ r: [String: Any], calendarID: String, calendar: String) -> CalendarEntry?
   {

@@ -216,7 +216,11 @@ internal sealed class OrbitWindow : Window
         if(!Dispatcher.CheckAccess()){Dispatcher.BeginInvoke(Publish);return;}
         if(!ready)return;
         var statuses=local.Statuses.Select(x=>(JsonObject)x.DeepClone()).ToList();
-        foreach(var source in new[]{"calendar","tasks"})statuses.Add(new(){["source"]=source,["state"]=google.Error!=null?"error":google.Connected?"connected":"disconnected",["message"]=google.Error??(google.Connected?"Google 연결됨":"Google 연결이 필요합니다."),["updated"]=google.Updated,["stale"]=google.Error!=null});
+        foreach(var source in new[]{"calendar","tasks"}) {
+            var error=source=="calendar"?google.CalendarError:google.TasksError;
+            var updated=source=="calendar"?google.CalendarUpdated:google.TasksUpdated;
+            statuses.Add(new(){["source"]=source,["state"]=error!=null?"error":google.Connected?"connected":"disconnected",["message"]=error??(google.Connected?"Google 연결됨":"Google 연결이 필요합니다."),["updated"]=updated,["stale"]=error!=null});
+        }
         Send(new(){["kind"]="snapshot",["protocolVersion"]=2,["platform"]="windows",
             ["capabilities"]=new JsonObject{["launchAtLogin"]=false,["chooseAgentRoots"]=true,["agentDesktopOpen"]=true,["dday"]=true},
             ["theme"]=settings.Theme,["pinned"]=pinned,["refreshing"]=refreshing,
@@ -233,7 +237,7 @@ internal sealed class OrbitWindow : Window
                 var result=await Task.Run(()=>LocalProviders.Read(captured));
                 if(captured.Drive==settings.Drive&&captured.Vault==settings.Vault&&captured.Codex==settings.Codex&&captured.Claude==settings.Claude){local=result;lastLocal=DateTime.UtcNow;}
             }
-            await google.Refresh();
+            await google.Refresh(Publish);
         }finally{refreshing=false;Publish();}
     }
     void OnPowerModeChanged(object sender,PowerModeChangedEventArgs e)

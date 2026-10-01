@@ -136,6 +136,10 @@ enum SelfTests {
     var invalid = adversarial
     invalid.sessionID = "x;exit"
     check("reject resume injection", resumeCommand(invalid, executable: "/bin/claude") == nil)
+    check("selected calendar included", GoogleClient.isSelectedCalendar(["selected": true]))
+    check("unselected calendar excluded", !GoogleClient.isSelectedCalendar(["selected": false]))
+    check("missing selected calendar excluded", !GoogleClient.isSelectedCalendar([:]))
+    check("hidden selected calendar excluded", !GoogleClient.isSelectedCalendar(["selected": true, "hidden": true]))
     let event: [String: Any] = [
       "id": "event", "summary": "<script>test</script>",
       "start": ["dateTime": "2026-09-05T10:00:00+09:00"],
