@@ -68,6 +68,8 @@ node --test tests/web.test.cjs
 
 앱은 개인용 ad-hoc 서명입니다. App Store 배포·공증 대상이 아니며 macOS 키체인 접근 확인이 나타날 수 있습니다. Codex/Claude의 로컬 기록 형식이나 URL 처리 방식이 바뀌면 해당 연결 코드 조정이 필요합니다.
 
+macOS DMG는 `bash scripts/package-macos.sh` 또는 GitHub Actions의 수동 **macOS DMG preview**로 생성합니다. 패키지 검증·초안 릴리스·공개 절차는 [macOS 릴리스 안내](docs/macos-release.md)를 확인하세요.
+
 ## 검증 경계
 
 2026-09-06 기준 설치 앱의 패널 표시, 캘린더 탭과 7일 일정 목록, 최근 파일 한글 검색, Claude Code 필터, 설정 열기/닫기, Moss·Pearl·Midnight 전환, 고정 on/off, 수동 새로고침을 확인했습니다. Swift 32개 + 웹 5개 테스트 및 빌드·서명 검증이 통과했습니다. 로컬 smoke-test 결과는 파일 60개, Codex 24개, Claude Code 13개이며 네 소스 모두 연결됨입니다.

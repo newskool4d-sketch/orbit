@@ -1,0 +1,82 @@
+name: macOS DMG preview
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Unused macOS preview tag (macos-YYYY.MM.DD)
+        required: true
+        default: macos-2026.10.01
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-dmg-preview
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: macos-14
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check approved source and free standard runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]]
+          [[ "$RELEASE_TAG" =~ ^macos-[0-9]{4}\.[0-9]{2}\.[0-9]{2}(-[1-9][0-9]*)?$ ]]
+          [[ "$(gh api "repos/$GITHUB_REPOSITORY" --jq .private)" == false ]]
+          git merge-base --is-ancestor 84dedb823afa22d9c3f9ac3c09ec9ca2cae4127c HEAD
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'Release already exists; existing assets will not be replaced.' >&2
+            exit 1
+          fi
+      - name: Build, test, sign, and verify mounted DMG
+        id: package
+        shell: bash
+        run: bash scripts/package-macos.sh
+      - name: Upload verified draft preview
+        shell: bash
+        env:
+          PACKAGE_ID: ${{ steps.package.outputs.package_id }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, pathlib
+          root = pathlib.Path('build/releases')
+          info = json.loads((root / (os.environ['PACKAGE_ID'] + '.verification.json')).read_text())
+          notes = f'''Orbit macOS {info['version']} 시험 배포판입니다.
+
+          선택 여부가 생략되거나 false인 Google 캘린더를 제외하는 수정과 회귀 검사를 반영했습니다.
+          기준 커밋: `{info['baseCommit']}`. 이번 수정 커밋 `84dedb8`을 포함합니다.
+
+          DMG에서 Orbit.app을 Applications로 옮겨 사용하세요. Apple Silicon Mac·macOS 14.0 이상이 필요합니다.
+          앱은 임시(ad-hoc) 서명이며 Apple 공증은 받지 않았습니다. 처음 실행이 차단되면 시스템 설정 → 개인정보 보호 및 보안에서 확인하세요.
+
+          GitHub 표준 macOS ARM64 러너에서 실제 Swift 빌드와 자체 시험 {info['nativeSelfTestsPassed']}/{info['nativeSelfTestsPassed']}, 공용 웹 시험 {info['sharedWebTestsPassed']}/{info['sharedWebTestsPassed']}를 통과했습니다.
+          DMG 무결성·읽기 전용 마운트·서명·arm64·최소 OS 14.0 및 마운트된 앱 자체 시험을 확인했습니다.
+          DMG SHA-256: `{info['dmgSha256']}`.
+
+          실제 GUI 화면과 사용자 Google 계정 끝단은 실행하지 않았습니다. 설정·D-day·계정 자격증명은 패키지에 포함하지 않았으며 Windows 릴리스는 변경하지 않았습니다.
+          '''
+          (root / 'release-notes.md').write_text(notes, encoding='utf-8')
+          PY
+          gh release create "$RELEASE_TAG" \
+            "build/releases/$PACKAGE_ID.dmg" \
+            "build/releases/$PACKAGE_ID.dmg.sha256" \
+            "build/releases/$PACKAGE_ID.verification.json" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --draft --prerelease --latest=false \
+            --title "Orbit macOS Preview — $RELEASE_TAG" \
+            --notes-file build/releases/release-notes.md
