@@ -1,5 +1,7 @@
 # Orbit Windows 시험판
 
+2026-10-26 변경을 Windows에서 이어서 검증할 때는 [작업 인계 문서](../docs/plans/2026-10-26-windows-handoff.md)의 환경 확인 → 빌드·전체 gate → 실제 화면 → 패키지·설치 → 릴리스 순서를 따르세요. 아래의 2026-09-17 결과는 과거 검증이며 현재 변경의 통과를 의미하지 않습니다.
+
 Windows 11 x64에서 원본 Orbit UI를 실행하는 WPF/WebView2 호스트입니다. 2026-09-17 현재 이 PC에서 빌드·설치본 교체·D-day와 글자 크기 복원·배율 상당 렌더링을 검증했습니다. 전체 판정은 PARTIAL이며 세부 근거는 [VERIFICATION.md](VERIFICATION.md)를 확인하세요.
 
 ## 실행
