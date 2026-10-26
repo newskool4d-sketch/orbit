@@ -59,7 +59,7 @@ typealias HTTPTransport = (URLRequest) async throws -> (Data, HTTPURLResponse)
     guard generation == credentialGeneration else {
       throw OrbitError(message: "Google 연결 요청이 취소되었습니다.")
     }
-    try saveTokens(response)
+    try saveTokens(response, fresh: true)
   }
   func disconnect() throws {
     credentialGeneration += 1
@@ -67,11 +67,12 @@ typealias HTTPTransport = (URLRequest) async throws -> (Data, HTTPURLResponse)
     try KeychainStore.remove("google-tokens")
     tokens = nil
   }
-  private func saveTokens(_ response: [String: Any]) throws {
+  private func saveTokens(_ response: [String: Any], fresh: Bool) throws {
     guard let access = response["access_token"] as? String, !access.isEmpty else {
       throw OrbitError(message: "Google 인증 토큰을 받지 못했습니다.")
     }
-    let refresh = response["refresh_token"] as? String ?? tokens?.refresh ?? ""
+    // A new authorization may belong to another account; only refresh grants can reuse a token.
+    let refresh = response["refresh_token"] as? String ?? (fresh ? "" : tokens?.refresh ?? "")
     guard !refresh.isEmpty else {
       throw OrbitError(message: "자동 갱신 권한을 받지 못했습니다. Google 연결을 다시 진행하세요.")
     }
@@ -115,7 +116,7 @@ typealias HTTPTransport = (URLRequest) async throws -> (Data, HTTPURLResponse)
     guard generation == credentialGeneration else {
       throw OrbitError(message: "Google 연결이 해제되었습니다.")
     }
-    try saveTokens(response)
+    try saveTokens(response, fresh: false)
     return tokens!.access
   }
   func request(

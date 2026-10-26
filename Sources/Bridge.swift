@@ -109,7 +109,7 @@ import WebKit
       let generation = localGeneration
       let old = local
       let scanFiles = forceFiles || Date().timeIntervalSince(lastFileScan) > 120
-      let value = await Task.detached(priority: .utility) {
+      var value = await Task.detached(priority: .utility) {
         if scanFiles {
           return LocalProviders.scan(drive: drive, vault: vault, codex: codex, claude: claude)
         }
@@ -139,6 +139,7 @@ import WebKit
         await refresh(forceFiles: true)
         return
       }
+      value.reuseFileIDs(from: old)
       local = value
       if scanFiles { lastFileScan = Date() }
       localBusy = false
@@ -207,7 +208,10 @@ import WebKit
   }
   func perform(_ action: String, body: [String: Any]) async throws -> String? {
     switch action {
-    case "ready": publish()
+    case "ready":
+      // The trusted page can request readiness before the navigation delegate's didFinish.
+      ready = true
+      publish()
     case "refresh": await refresh(forceFiles: true)
     case "theme":
       guard let value = body["value"] as? String, ["moss", "pearl", "cobalt"].contains(value) else {

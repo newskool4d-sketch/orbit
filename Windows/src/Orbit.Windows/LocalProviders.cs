@@ -11,6 +11,14 @@ namespace Orbit;
 internal sealed record FileTarget(string Root,string Path);
 internal sealed class LocalSnapshot
 {
+    readonly Dictionary<string,string> previousIds;
+    readonly Dictionary<string,string> identities=new(StringComparer.OrdinalIgnoreCase);
+    public LocalSnapshot(LocalSnapshot? previous=null) {previousIds=previous?.identities??new(StringComparer.OrdinalIgnoreCase);}
+    public string DisplayId(string identity) {
+        if(identities.TryGetValue(identity,out var current))return current;
+        var id=previousIds.TryGetValue(identity,out var old)?old:Guid.NewGuid().ToString("N");
+        identities[identity]=id;return id;
+    }
     public List<JsonObject> Files {get;}=[];
     public List<JsonObject> Agents {get;}=[];
     public List<JsonObject> Statuses {get;}=[];
@@ -21,9 +29,9 @@ internal static class LocalProviders
 {
     static readonly HashSet<string> Extensions=new(StringComparer.OrdinalIgnoreCase){".pdf",".hwpx",".hwp",".docx",".xlsx",".pptx",".md",".txt",".csv",".png",".jpg",".jpeg"};
     public static JsonObject Status(string source,string state,string message,int count=0,bool limited=false)=>new(){["source"]=source,["state"]=state,["message"]=message,["updated"]=DateTimeOffset.UtcNow.ToUnixTimeSeconds(),["limited"]=limited,["stale"]=false};
-    public static LocalSnapshot Read(Settings settings)
+    public static LocalSnapshot Read(Settings settings,LocalSnapshot? previous=null)
     {
-        var result=new LocalSnapshot();
+        var result=new LocalSnapshot(previous);
         Files(settings.Drive,"drive",result);Files(settings.Vault,"obsidian",result);
         Claude(settings.Claude,result);
         CodexProvider.Read(settings.Codex,result);
@@ -52,7 +60,7 @@ internal static class LocalProviders
             foreach(var f in candidates.OrderByDescending(f=>f.LastWriteTimeUtc).Take(30))
             {
                 if(!PathPolicy.Within(root,f.FullName)){limited=true;continue;}
-                var id=Guid.NewGuid().ToString("N");result.FileMap[id]=new(root,f.FullName);
+                var id=result.DisplayId("file:"+source+":"+root+"\0"+f.FullName);result.FileMap[id]=new(root,f.FullName);
                 result.Files.Add(new(){["id"]=id,["source"]=source,["name"]=f.Name,["parent"]=f.Directory?.Name??"",["modified"]=new DateTimeOffset(f.LastWriteTimeUtc).ToUnixTimeSeconds()});
             }
             result.Statuses.Add(Status(source,"connected",limited?"일부 범위만 검색됨 · 링크/클라우드 파일 검증 필요":"최근 수정 파일 연결됨",0,limited));
@@ -103,7 +111,7 @@ internal static class LocalProviders
                 }
                 if(side)continue;if(custom.Length>0)title=custom;if(title.Length==0)title="제목 없는 작업";
                 title=title.Replace('\r',' ').Replace('\n',' ');if(title.Length>160)title=title[..160];
-                var id=Guid.NewGuid().ToString("N");result.AgentMap[id]="claude";
+                var id=result.DisplayId("claude:"+file.FullName);result.AgentMap[id]="claude";
                 result.Agents.Add(new(){["id"]=id,["provider"]="claude",["title"]=title,["project"]=project,["updated"]=new DateTimeOffset(file.LastWriteTimeUtc).ToUnixTimeSeconds(),["status"]="최근 기록",["openMode"]=AppLinks.Registered("claude")?"appHome":"unavailable"});
             }
             result.Statuses.Add(Status("claude","connected","로컬 기록 연결됨 · 앱에서 작업 직접 선택",0,limited));

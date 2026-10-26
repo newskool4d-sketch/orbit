@@ -17,7 +17,7 @@ internal static class CodexProvider
             foreach(var row in rows)
             {
                 if(!Guid.TryParse(row["id"],out _))continue;
-                var id=Guid.NewGuid().ToString("N");var title=row["title"];if(title.Length>160)title=title[..160];
+                var id=result.DisplayId("codex:"+row["id"]);var title=row["title"];if(title.Length>160)title=title[..160];
                 result.AgentMap[id]="codex";
                 result.Agents.Add(new(){["id"]=id,["provider"]="codex",["title"]=title,["project"]=Path.GetFileName(Path.TrimEndingDirectorySeparator(row["cwd"])),["updated"]=long.TryParse(row["updated_at"],out var updated)?updated:0,["status"]="최근 기록",["openMode"]=AppLinks.Registered("codex")?"appHome":"unavailable"});
             }

@@ -107,6 +107,15 @@ enum SelfTests {
       httpsURL("javascript:alert(1)") == nil && httpsURL("file:///tmp/a") == nil
         && httpsURL("https://user:password@example.com") == nil)
     check("https link accepted", httpsURL("https://meet.google.com/aaa-bbbb-ccc") != nil)
+    let originalFile = FileEntry(id: "stable", name: "fixture.md", source: "drive", modified: 1, parent: "fixture", path: "/fixture/a.md")
+    var refreshedFiles = LocalSnapshot(files: [
+      FileEntry(id: "new", name: "fixture.md", source: "drive", modified: 2, parent: "fixture", path: "/fixture/a.md"),
+      FileEntry(id: "other-source", name: "fixture.md", source: "obsidian", modified: 1, parent: "fixture", path: "/fixture/a.md"),
+      FileEntry(id: "other-path", name: "fixture.md", source: "drive", modified: 1, parent: "fixture", path: "/fixture/b.md"),
+    ])
+    refreshedFiles.reuseFileIDs(from: LocalSnapshot(files: [originalFile]))
+    check("file refresh retains opaque ID across metadata change", refreshedFiles.files[0].id == "stable")
+    check("file refresh separates sources and paths", refreshedFiles.files[1].id == "other-source" && refreshedFiles.files[2].id == "other-path")
     let id = "12345678-1234-1234-1234-123456789abc"
     let claude: [[String: Any]] = [
       ["type": "user", "cwd": "/tmp/Project", "message": ["content": "검토 요청"]],

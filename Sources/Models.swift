@@ -56,6 +56,13 @@ struct LocalSnapshot {
   var files: [FileEntry] = []
   var agents: [AgentEntry] = []
   var statuses: [SourceStatus] = []
+  mutating func reuseFileIDs(from previous: LocalSnapshot) {
+    for index in files.indices {
+      if let old = previous.files.first(where: {
+        $0.source == files[index].source && $0.path == files[index].path
+      }) { files[index].id = old.id }
+    }
+  }
 }
 struct OrbitError: LocalizedError {
   let message: String

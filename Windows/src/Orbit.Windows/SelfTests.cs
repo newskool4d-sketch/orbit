@@ -19,12 +19,13 @@ internal sealed class MemorySecrets : ISecrets
 }
 internal sealed class FakeHttp : HttpMessageHandler
 {
-    public bool LosePatch,FailGet;public int Patches;public string LastBody="";public string Status="needsAction";
+    public bool LosePatch,FailGet,IncludeEvents;public int Patches;public string LastBody="";public string Status="needsAction";
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct)
     {
         var path=request.RequestUri!.AbsolutePath;
         string json;
-        if(path.EndsWith("/calendarList"))json="{\"items\":[]}";
+        if(path.EndsWith("/calendarList"))json=IncludeEvents?"{\"items\":[{\"id\":\"calendar\",\"summary\":\"fixture\",\"selected\":true}]}":"{\"items\":[]}";
+        else if(path.EndsWith("/events"))json="{\"items\":[{\"id\":\"event\",\"summary\":\"fixture\",\"start\":{\"dateTime\":\"2030-01-01T09:00:00Z\"},\"end\":{\"dateTime\":\"2030-01-01T10:00:00Z\"}}]}";
         else if(path.EndsWith("/users/@me/lists"))json="{\"items\":[{\"id\":\"list\",\"title\":\"fixture\"}]}";
         else if(path.EndsWith("/tasks"))json="{\"items\":[{\"id\":\"task\",\"title\":\"fixture\",\"status\":\""+Status+"\"}]}";
         else if(request.Method==HttpMethod.Patch){Patches++;LastBody=await request.Content!.ReadAsStringAsync(ct);Status=JsonNode.Parse(LastBody)!["status"]!.ToString();if(LosePatch)throw new HttpRequestException("fixture");json="{\"status\":\""+Status+"\"}";}
@@ -61,6 +62,9 @@ internal static class SelfTests
             var store=new MemorySecrets();new SecretSession(store).Replace(new(){{"clientId","fixture"},{"clientSecret","fixture"},{"refresh","fixture"},{"access","fixture"},{"expiry",DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds().ToString()}});
             var fake=new FakeHttp();using var google=new Google(store,fake);await google.Refresh();
             Check(google.Tasks.Count==1&&google.Error==null,"google-read-fixture");
+            fake.IncludeEvents=true;await google.Refresh();
+            var eventId=google.Events[0]["id"]!.ToString();await google.Refresh();
+            Check(google.Events[0]["id"]!.ToString()==eventId,"event-refresh-preserves-opaque-id");
             var id=google.Tasks[0]["id"]!.ToString();await google.Complete(id,true,()=>{});
             Check(google.Tasks[0]["completed"]!.GetValue<bool>(),"task-complete");
             await google.Complete(id,false,()=>{});
@@ -86,6 +90,11 @@ internal static class SelfTests
                 Check(!PathPolicy.Within(fixtureRoot+"-other",document),"file-root-prefix-rejected");
                 var files=LocalProviders.Read(new Settings{Drive=fixtureRoot,Vault="",Codex="",Claude=""});
                 Check(files.Files.Count==1&&files.Files[0]["name"]!.ToString()=="한글 문서.md","file-metadata-filter");
+                var reloadedFiles=LocalProviders.Read(new Settings{Drive=fixtureRoot,Vault="",Codex="",Claude=""},files);
+                Check(reloadedFiles.Files[0]["id"]!.ToString()==files.Files[0]["id"]!.ToString(),"file-refresh-preserves-opaque-id");
+                var original=new LocalSnapshot();var opaqueId=original.DisplayId("claude:fixture");
+                var next=new LocalSnapshot(original);
+                Check(next.DisplayId("claude:fixture")==opaqueId&&next.DisplayId("codex:fixture")!=opaqueId,"agent-refresh-preserves-source-specific-id");
             }finally{foreach(var p in Directory.GetFiles(fixtureRoot))File.Delete(p);Directory.Delete(fixtureRoot);}
 Console.WriteLine($"RESULT passed={count} failed=0");return 0;
         }catch(Exception e){Console.WriteLine($"RESULT passed={count} failed=1 test={e.Message}");return 1;}

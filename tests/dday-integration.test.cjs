@@ -32,6 +32,7 @@ function fixture() {
   }
   for (const match of html.matchAll(/id="([^"]+)"/g)) get('#' + match[1]);
   get('#dday-manager').hidden = true;
+  get('#settings').hidden = true;
   const context = vm.createContext({
     document, Date, console,
     setTimeout(fn, delay) { const id = ++timerId; timers.set(id, { fn, delay }); return id; },
@@ -184,6 +185,37 @@ test('Tab and Shift-Tab stay inside the open manager', () => {
   assert.equal(f.document.activeElement,first);
   f.context.trapDdayFocus({key:'Tab',shiftKey:true,preventDefault(){prevented++}});
   assert.equal(f.document.activeElement,last);assert.equal(prevented,2);
+});
+
+test('settings traps focus, survives nested D-day, and restores its opener', () => {
+  const f=fixture(),opener=f.get('#settings-button');opener.focus();f.context.settings(true,opener);
+  const first=f.get('#settings-close'),last=f.get('#quit'),panel=f.get('#settings');
+  first.closest=last.closest=()=>null;panel.querySelectorAll=()=>[first,last];panel.contains=node=>node===first||node===last;
+  let prevented=0;last.focus();f.context.trapSettingsFocus({key:'Tab',preventDefault(){prevented++}});
+  assert.equal(f.document.activeElement,first);
+  f.context.trapSettingsFocus({key:'Tab',shiftKey:true,preventDefault(){prevented++}});
+  assert.equal(f.document.activeElement,last);assert.equal(prevented,2);
+  f.context.openDdayManager();f.context.closeDdayManager();
+  assert.equal(f.get('#content').inert,true);assert.equal(panel.inert,false);
+  f.context.settings(false);assert.equal(f.get('#content').inert,false);assert.equal(f.document.activeElement,opener);
+});
+
+test('physical KeyK shortcut works with Hangul and composition for Cmd and Ctrl', () => {
+  for(const modifier of ['metaKey','ctrlKey'])for(const key of ['ㅏ','Process']){
+    const f=fixture();f.context.settings(true,f.get('#settings-button'));let prevented=false;
+    for(const listener of f.listeners.keydown)listener({key,code:'KeyK',[modifier]:true,isComposing:key==='Process',target:{matches:()=>false},preventDefault(){prevented=true}});
+    assert.equal(prevented,true);assert.equal(f.get('#settings').hidden,true);assert.equal(f.document.activeElement,f.get('#file-search'));
+  }
+});
+
+test('forced task change cannot bypass refresh, pending, or unknown write locks', async () => {
+  for(const mutationState of ['idle','pending','unknown']){
+    const f=fixture();f.snapshot({refreshing:mutationState==='idle',tasks:[{id:'fixture',completed:false,mutationState}]});
+    let writes=0;f.context.act=async()=>{writes++;return true};
+    const checkbox=f.get('#fixture-task');checkbox.matches=()=>true;checkbox.dataset.task='fixture';checkbox.checked=true;
+    for(const listener of f.listeners.change)await listener({target:checkbox,preventDefault(){}});
+    assert.equal(writes,0);assert.equal(checkbox.checked,false);
+  }
 });
 
 test('calendar dates stay one day apart through DST and use the local date across the date line', () => {

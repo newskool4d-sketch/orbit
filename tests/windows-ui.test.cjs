@@ -26,7 +26,7 @@ test('pending and unknown server mutations remain locked without a local request
   for (const mutationState of ['pending', 'unknown']) {
     context.state.tasks = [{ id: 'fixture', title: 'fixture', completed: false, mutationState }];
     vm.runInContext('renderToday([])', context);
-    assert.match(nodes.get('#task-section').innerHTML.match(/<input\b[^>]*>/)[0], /\bdisabled\b/);
+    assert.match(nodes.get('#task-section').innerHTML.match(/<input\b[^>]*>/)[0], /aria-disabled="true"/);
   }
 });
 test('new-project behavior is visible without hovering', () => {

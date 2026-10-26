@@ -346,3 +346,5 @@ body[data-text-size="xlarge"] .dday-delete-confirm { margin-left: 0; }
     padding-right: 3px;
   }
 }
+/* Keep busy Tasks keyboard-focusable while the bridge blocks duplicate changes. */
+.task input[aria-disabled="true"] { opacity: .65; cursor: wait; }

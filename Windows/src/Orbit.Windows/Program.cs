@@ -230,7 +230,8 @@ internal sealed class OrbitWindow : Window
         try {
             if(force||DateTime.UtcNow-lastLocal>TimeSpan.FromSeconds(120)) {
                 var captured=JsonSerializer.Deserialize<Settings>(JsonSerializer.Serialize(settings))!;
-                var result=await Task.Run(()=>LocalProviders.Read(captured));
+                var previous=local;
+                var result=await Task.Run(()=>LocalProviders.Read(captured,previous));
                 if(captured.Drive==settings.Drive&&captured.Vault==settings.Vault&&captured.Codex==settings.Codex&&captured.Claude==settings.Claude){local=result;lastLocal=DateTime.UtcNow;}
             }
             await google.Refresh();

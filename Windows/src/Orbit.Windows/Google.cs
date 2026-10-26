@@ -19,6 +19,7 @@ internal sealed class Google : IDisposable
     readonly SemaphoreSlim gate=new(1);
     CancellationTokenSource? auth;
     readonly Dictionary<string,(string List,string Task)> ids=new();
+    readonly Dictionary<(string Calendar,string Event),string> eventIds=new();
     internal readonly Dictionary<string,(string Link,string Meeting)> EventMap=new();
     public List<JsonObject> Events {get;private set;}=[];
     public List<JsonObject> Tasks {get;private set;}=[];
@@ -32,7 +33,7 @@ internal sealed class Google : IDisposable
         http=new(handler??new HttpClientHandler{AllowAutoRedirect=false}){Timeout=TimeSpan.FromSeconds(20)};
     }
     static string S(JsonNode? n)=>n is JsonValue v&&v.TryGetValue<string>(out var s)?s:"";
-    void Clear(){Events=[];Tasks=[];ids.Clear();EventMap.Clear();Updated=0;Error=null;}
+    void Clear(){Events=[];Tasks=[];ids.Clear();eventIds.Clear();EventMap.Clear();Updated=0;Error=null;}
     public async Task Import(string path) {
         if(new FileInfo(path).Length>65536)throw new InvalidOperationException("OAuth JSON 파일 크기를 확인하세요.");
         var c=JsonNode.Parse(await File.ReadAllTextAsync(path))?["installed"];
@@ -120,13 +121,13 @@ internal sealed class Google : IDisposable
         await gate.WaitAsync();
         try {
             if(!Connected){Clear();return;}
-            var events=new List<JsonObject>();var links=new Dictionary<string,(string,string)>();
+            var events=new List<JsonObject>();var links=new Dictionary<string,(string,string)>();var nextEventIds=new Dictionary<(string,string),string>();
             foreach(var calendar in (await Pages("calendar/v3/users/me/calendarList")).Where(c=>c["selected"]?.GetValue<bool>()==true)) {
                 var start=Uri.EscapeDataString(new DateTimeOffset(DateTime.Today).ToString("o"));var end=Uri.EscapeDataString(new DateTimeOffset(DateTime.Today.AddDays(7)).ToString("o"));
                 foreach(var e in await Pages($"calendar/v3/calendars/{Uri.EscapeDataString(S(calendar["id"]))}/events?singleEvents=true&orderBy=startTime&timeMin={start}&timeMax={end}")) {
                     if(S(e["status"])=="cancelled")continue;
                     if(e["attendees"] is JsonArray attendees&&attendees.OfType<JsonObject>().Any(a=>a["self"]?.GetValue<bool>()==true&&S(a["responseStatus"])=="declined"))continue;
-                    var id=Guid.NewGuid().ToString("N");var meeting=S(e["hangoutLink"]);links[id]=(S(e["htmlLink"]),meeting);
+                    var eventKey=(S(calendar["id"]),S(e["id"]));var id=eventIds.TryGetValue(eventKey,out var oldId)?oldId:Guid.NewGuid().ToString("N");nextEventIds[eventKey]=id;var meeting=S(e["hangoutLink"]);links[id]=(S(e["htmlLink"]),meeting);
                     events.Add(new(){["id"]=id,["title"]=S(e["summary"]),["calendar"]=S(calendar["summary"]),["start"]=Stamp(e["start"]?["dateTime"]??e["start"]?["date"]),["end"]=Stamp(e["end"]?["dateTime"]??e["end"]?["date"]),["allDay"]=e["start"]?["date"]!=null,["hasMeeting"]=PathPolicy.Https(meeting)});
                 }
             }
@@ -138,6 +139,7 @@ internal sealed class Google : IDisposable
                 tasks.Add(new(){["id"]=id,["title"]=S(task["title"]),["list"]=S(list["title"]),["due"]=due.Length>=10?due[..10]:"",["completed"]=S(task["status"])=="completed",["mutationState"]="idle"});
             }
             Events=events.OrderBy(e=>e["start"]!.GetValue<double>()).ToList();Tasks=tasks;ids.Clear();foreach(var (id,key) in map)ids[id]=key;
+            eventIds.Clear();foreach(var (key,id) in nextEventIds)eventIds[key]=id;
             EventMap.Clear();foreach(var (id,link) in links)EventMap[id]=link;Updated=DateTimeOffset.UtcNow.ToUnixTimeSeconds();Error=null;
         }catch{Error="Google 동기화 실패 · 마지막 데이터 유지. 연결 상태를 확인하세요.";}finally{gate.Release();}
     }
