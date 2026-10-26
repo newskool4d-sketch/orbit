@@ -6,12 +6,17 @@ struct OAuthTokens: Codable {
   var expires: Double
 }
 typealias HTTPTransport = (URLRequest) async throws -> (Data, HTTPURLResponse)
+/// The token endpoint rejected the stored refresh token; only a new sign-in can recover.
+struct GoogleReauthRequired: LocalizedError {
+  var errorDescription: String? { "Google 로그인이 만료되었습니다. 설정에서 다시 연결하세요." }
+}
 
 @MainActor final class GoogleClient {
   let oauth = OAuthFlow()
   private var tokens: OAuthTokens?
   private var config: OAuthConfig?
   private var credentialGeneration = 0
+  private var needsReconnect = false
   var loadError = ""
   var transport: HTTPTransport
   var configured: Bool { config != nil }
@@ -66,6 +71,7 @@ typealias HTTPTransport = (URLRequest) async throws -> (Data, HTTPURLResponse)
     oauth.cancel()
     try KeychainStore.remove("google-tokens")
     tokens = nil
+    needsReconnect = false
   }
   private func saveTokens(_ response: [String: Any], fresh: Bool) throws {
     guard let access = response["access_token"] as? String, !access.isEmpty else {
@@ -81,6 +87,7 @@ typealias HTTPTransport = (URLRequest) async throws -> (Data, HTTPURLResponse)
       expires: Date().timeIntervalSince1970 + (response["expires_in"] as? Double ?? 3600))
     try KeychainStore.write(JSONEncoder().encode(new), key: "google-tokens")
     tokens = new
+    needsReconnect = false
   }
   private func exchange(_ fields: [String: String], config: OAuthConfig) async throws -> [String:
     Any]
@@ -95,6 +102,13 @@ typealias HTTPTransport = (URLRequest) async throws -> (Data, HTTPURLResponse)
     req.httpBody = OAuthHelpers.form(values)
     let (data, http) = try await transport(req)
     guard http.statusCode == 200 else {
+      // Only the invalid_grant code is read from the body; the body itself is never surfaced.
+      if http.statusCode == 400,
+        let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+        body["error"] as? String == "invalid_grant"
+      {
+        throw GoogleReauthRequired()
+      }
       throw OrbitError(
         message: http.statusCode == 400
           ? "Google 인증이 만료되었거나 클라이언트 설정이 올바르지 않습니다. 다시 연결하세요."
@@ -110,9 +124,17 @@ typealias HTTPTransport = (URLRequest) async throws -> (Data, HTTPURLResponse)
       throw OrbitError(message: "Google 계정을 연결하세요.")
     }
     if token.expires > Date().timeIntervalSince1970 + 90 { return token.access }
+    // A revoked or expired refresh token cannot succeed until the user signs in again.
+    if needsReconnect { throw GoogleReauthRequired() }
     let generation = credentialGeneration
-    let response = try await exchange(
-      ["grant_type": "refresh_token", "refresh_token": token.refresh], config: config)
+    let response: [String: Any]
+    do {
+      response = try await exchange(
+        ["grant_type": "refresh_token", "refresh_token": token.refresh], config: config)
+    } catch let error as GoogleReauthRequired {
+      if generation == credentialGeneration { needsReconnect = true }
+      throw error
+    }
     guard generation == credentialGeneration else {
       throw OrbitError(message: "Google 연결이 해제되었습니다.")
     }
@@ -247,7 +269,7 @@ typealias HTTPTransport = (URLRequest) async throws -> (Data, HTTPURLResponse)
         path: "/tasks/v1/lists/\(id)/tasks",
         query: [
           .init(name: "maxResults", value: "100"), .init(name: "showCompleted", value: "true"),
-          .init(name: "showHidden", value: "false"),
+          .init(name: "showHidden", value: "true"),
         ])
       result += rows.compactMap {
         Self.parseTask($0, listID: id, list: list["title"] as? String ?? "할 일")
@@ -259,8 +281,8 @@ typealias HTTPTransport = (URLRequest) async throws -> (Data, HTTPURLResponse)
     }
   }
   static func parseTask(_ r: [String: Any], listID: String, list: String) -> TaskEntry? {
-    guard let id = r["id"] as? String, r["deleted"] as? Bool != true, r["hidden"] as? Bool != true
-    else { return nil }
+    // Completed tasks become hidden after Google clears them; keep them like the Windows host.
+    guard let id = r["id"] as? String, r["deleted"] as? Bool != true else { return nil }
     return .init(
       id: listID + ":" + id, taskID: id, listID: listID,
       title: r["title"] as? String ?? "제목 없는 할 일", list: list,

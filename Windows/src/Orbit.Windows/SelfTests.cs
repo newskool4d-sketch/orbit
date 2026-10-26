@@ -22,9 +22,15 @@ internal sealed class FakeHttp : HttpMessageHandler
 {
     public bool LosePatch,FailGet,RejectPatch,LosePatchWithoutWrite,IncludeCalendar,FailCalendar,FailTasks;
     public int Patches,TaskReads;public string LastBody="",Status="needsAction",CalendarEvents="{\"items\":[]}";
+    public string? TokenError,TaskRows;public int TokenRequests;
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct)
     {
         var path=request.RequestUri!.AbsolutePath;
+        if(request.RequestUri!.Host=="oauth2.googleapis.com") {
+            TokenRequests++;
+            if(TokenError!=null)return new(HttpStatusCode.BadRequest){Content=new StringContent("{\"error\":\""+TokenError+"\",\"error_description\":\"fixture-detail\"}")};
+            return new(HttpStatusCode.OK){Content=new StringContent("{\"access_token\":\"fixture\",\"expires_in\":3600}")};
+        }
         string json;
         if(path.EndsWith("/calendarList")) {
             if(FailCalendar)return new(HttpStatusCode.Forbidden){Content=new StringContent("{}")};
@@ -35,7 +41,7 @@ internal sealed class FakeHttp : HttpMessageHandler
             TaskReads++;if(FailTasks)return new(HttpStatusCode.Forbidden){Content=new StringContent("{}")};
             json="{\"items\":[{\"id\":\"list\",\"title\":\"fixture\"}]}";
         }
-        else if(path.EndsWith("/tasks"))json="{\"items\":[{\"id\":\"task\",\"title\":\"fixture\",\"status\":\""+Status+"\"}]}";
+        else if(path.EndsWith("/tasks"))json=TaskRows??"{\"items\":[{\"id\":\"task\",\"title\":\"fixture\",\"status\":\""+Status+"\"}]}";
         else if(request.Method==HttpMethod.Patch) {
             Patches++;LastBody=await request.Content!.ReadAsStringAsync(ct);
             if(RejectPatch)return new(HttpStatusCode.Forbidden){Content=new StringContent("{}")};
@@ -94,6 +100,7 @@ internal static class SelfTests
 
             DdaySelfTests.Run(Check);
             LocalProviderRegressionTests();
+            CrossPlatformParityRegressionTests();
 
             Check(ReparsePolicy.Cloud(0x9000001A)&&ReparsePolicy.Cloud(0x9000F01A)&&!ReparsePolicy.Cloud(0xA000000C),"cloud-tag-vs-symlink");
             var fixtureRoot=Path.Combine(Path.GetTempPath(),"Orbit-files-fixture-"+Guid.NewGuid().ToString("N"));
@@ -161,6 +168,33 @@ Console.WriteLine($"RESULT passed={count} failed=0");return 0;
             for(int i=0;i<35;i++)File.WriteAllText(Path.Combine(regular,$"fixture-{i}.md"),"fixture");
             var capped=new LocalSnapshot();LocalProviders.Files(root,"drive",capped);
             Check(capped.Files.Count==30,"per-source-thirty-file-cap-preserved");
+        }finally{Directory.Delete(root,true);}
+    }
+    static void CrossPlatformParityRegressionTests()
+    {
+        var root=Path.Combine(Path.GetTempPath(),"Orbit-parity-fixture-"+Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try {
+            var types=Path.Combine(root,"types");Directory.CreateDirectory(types);
+            foreach(var name in new[]{"doc.gdoc","sheet.gsheet","slides.gslides","page.html","image.png","photo.jpg"})File.WriteAllText(Path.Combine(types,name),"fixture");
+            var typed=new LocalSnapshot();LocalProviders.Files(types,"drive",typed);
+            var names=typed.Files.Select(f=>f["name"]!.ToString()).OrderBy(n=>n,StringComparer.Ordinal).ToArray();
+            Check(names.SequenceEqual(new[]{"doc.gdoc","page.html","sheet.gsheet","slides.gslides"}),"file-extensions-match-macos-and-design");
+
+            var drive=Path.Combine(root,"drive");var vault=Path.Combine(drive,"vault");Directory.CreateDirectory(vault);
+            File.WriteAllText(Path.Combine(drive,"drive.md"),"fixture");File.WriteAllText(Path.Combine(vault,"note.md"),"fixture");
+            var scoped=new LocalSnapshot();LocalProviders.Files(drive,"drive",scoped,null,vault+Path.DirectorySeparatorChar);
+            Check(scoped.Files.Count==1&&scoped.Files[0]["name"]!.ToString()=="drive.md"&&!scoped.Statuses[0]["limited"]!.GetValue<bool>(),"drive-scan-skips-vault-inside-drive");
+            var both=LocalProviders.Read(new Settings{Drive=drive,Vault=vault,Codex="",Claude=""});
+            Check(both.Files.Count==2&&both.Files.Count(f=>f["source"]!.ToString()=="obsidian")==1,"vault-files-listed-once-as-obsidian");
+
+            var claude=Path.Combine(root,"claude");
+            for(int i=0;i<LocalProviders.ClaudeProjectLimit;i++)Directory.CreateDirectory(Path.Combine(claude,$"a{i:000}")).LastWriteTimeUtc=new DateTime(2001,1,1,0,0,0,DateTimeKind.Utc);
+            var recent=Directory.CreateDirectory(Path.Combine(claude,"zzz-recent"));
+            File.WriteAllText(Path.Combine(recent.FullName,"12345678-1234-1234-1234-123456789abd.jsonl"),"{\"type\":\"user\",\"cwd\":\"/tmp/Recent\",\"message\":{\"content\":\"recent fixture\"}}\n");
+            recent.LastWriteTimeUtc=DateTime.UtcNow;
+            var sessions=new LocalSnapshot();LocalProviders.Claude(claude,sessions);
+            Check(sessions.Agents.Any(a=>a["title"]!.ToString()=="recent fixture")&&sessions.Statuses[0]["limited"]!.GetValue<bool>(),"claude-project-cap-keeps-newest-folder-and-reports-partial");
         }finally{Directory.Delete(root,true);}
     }
     static JsonObject CalendarEvent(string title="fixture")=>new()
@@ -234,6 +268,20 @@ Console.WriteLine($"RESULT passed={count} failed=0");return 0;
         Check(partialClient.EventMap[partialClient.Events[0]["id"]!.ToString()].Meeting=="https://example.com/primary","hangout-link-remains-preferred");
         partial.CalendarEvents=CalendarRows(CalendarEvent());await partialClient.Refresh();
         Check(!partialClient.Events[0]["hasMeeting"]!.GetValue<bool>(),"event-without-meeting-remains-calendar-only");
+
+        var ordering=new FakeHttp{TaskRows="{\"items\":[{\"id\":\"none\",\"title\":\"none\",\"status\":\"needsAction\"},{\"id\":\"done\",\"title\":\"done\",\"status\":\"completed\",\"due\":\"2020-01-01T00:00:00.000Z\"},{\"id\":\"late\",\"title\":\"late\",\"status\":\"needsAction\",\"due\":\"2030-01-01T00:00:00.000Z\"},{\"id\":\"overdue\",\"title\":\"overdue\",\"status\":\"needsAction\",\"due\":\"2020-01-01T00:00:00.000Z\"}]}"};
+        using var orderingClient=new Google(store,ordering);await orderingClient.Refresh();
+        Check(orderingClient.Tasks.Select(t=>t["title"]!.ToString()).SequenceEqual(new[]{"overdue","late","none","done"}),"tasks-open-first-then-due-date");
+
+        var expiredStore=new MemorySecrets();new SecretSession(expiredStore).Replace(new(){{"clientId","fixture"},{"clientSecret","fixture"},{"refresh","fixture"},{"access","fixture"},{"expiry","0"}});
+        var revoked=new FakeHttp{TokenError="invalid_grant"};using var revokedClient=new Google(expiredStore,revoked);
+        await revokedClient.Refresh();
+        Check(revokedClient.CalendarError==Google.ReauthError&&revokedClient.TasksError==Google.ReauthError&&revoked.TokenRequests==1,"invalid-grant-asks-to-reconnect");
+        await revokedClient.Refresh();
+        Check(revoked.TokenRequests==1&&revokedClient.Connected&&!(revokedClient.Error??"").Contains("fixture-detail"),"invalid-grant-stops-repeated-refresh");
+        var misconfigured=new FakeHttp{TokenError="invalid_client"};using var misconfiguredClient=new Google(expiredStore,misconfigured);
+        await misconfiguredClient.Refresh();await misconfiguredClient.Refresh();
+        Check(misconfigured.TokenRequests>=2&&misconfiguredClient.CalendarError!=Google.ReauthError,"other-token-errors-keep-retrying");
     }
     public static int CredentialProbe()
     {

@@ -119,12 +119,16 @@ import WebKit
         let now = Date().timeIntervalSince1970
         for provider in ["codex", "claude"] {
           do {
-            v.agents +=
-              try provider == "codex"
-              ? LocalProviders.codexSessions(root: codex)
-              : LocalProviders.claudeSessions(root: claude)
+            var message = "로컬 작업 기록"
+            if provider == "codex" {
+              v.agents += try LocalProviders.codexSessions(root: codex)
+            } else {
+              let (sessions, limited) = try LocalProviders.claudeSessions(root: claude)
+              v.agents += sessions
+              message = LocalProviders.claudeStatus(limited: limited)
+            }
             v.statuses.append(
-              .init(source: provider, state: "connected", message: "로컬 작업 기록", updated: now))
+              .init(source: provider, state: "connected", message: message, updated: now))
           } catch {
             v.statuses.append(
               .init(

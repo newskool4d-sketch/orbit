@@ -54,7 +54,9 @@ enum LocalProviders {
         continue
       }
       do {
-        let (files, limited) = try recentFiles(path: path, source: source)
+        // A vault inside the Drive folder is listed once, as Obsidian, without using the Drive budget.
+        let (files, limited) = try recentFiles(
+          path: path, source: source, excluding: source == "drive" ? vault : nil)
         snapshot.files += files
         snapshot.statuses.append(
           .init(
@@ -78,9 +80,10 @@ enum LocalProviders {
         .init(source: "codex", state: "error", message: error.localizedDescription, updated: 0))
     }
     do {
-      snapshot.agents += try claudeSessions(root: claude)
+      let (sessions, limited) = try claudeSessions(root: claude)
+      snapshot.agents += sessions
       snapshot.statuses.append(
-        .init(source: "claude", state: "connected", message: "Claude Code 로컬 세션", updated: now))
+        .init(source: "claude", state: "connected", message: claudeStatus(limited: limited), updated: now))
     } catch {
       snapshot.statuses.append(
         .init(
@@ -89,9 +92,20 @@ enum LocalProviders {
     snapshot.agents.sort { $0.updated > $1.updated }
     return snapshot
   }
-  static func recentFiles(path: String, source: String) throws -> ([FileEntry], Bool) {
+  /// Symlink-resolved, NFC path used to compare folders chosen in different ways.
+  static func normalizedPath(_ path: String) -> String {
+    URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
+      .precomposedStringWithCanonicalMapping
+  }
+  static func recentFiles(path: String, source: String, excluding: String? = nil) throws -> (
+    [FileEntry], Bool
+  ) {
     let fm = FileManager.default
     let root = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+    let excluded = excluding.flatMap { $0.isEmpty ? nil : normalizedPath($0) }
+    let excludedName = excluded.map {
+      URL(fileURLWithPath: $0).lastPathComponent.precomposedStringWithCanonicalMapping
+    }
     _ = try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
     let keys: Set<URLResourceKey> = [
       .isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey, .contentModificationDateKey,
@@ -122,12 +136,15 @@ enum LocalProviders {
         continue
       }
       guard let v = try? url.resourceValues(forKeys: keys) else { continue }
-      if v.isSymbolicLink == true {
-        items.skipDescendants()
-        continue
-      }
+      // The enumerator never follows links; skipDescendants() here would skip the next sibling folder.
+      if v.isSymbolicLink == true { continue }
       if v.isDirectory == true {
-        if ["node_modules", "build", "dist", "vendor"].contains(url.lastPathComponent) {
+        // The name check keeps symlink resolution to the few folders that can match.
+        if ["node_modules", "build", "dist", "vendor"].contains(url.lastPathComponent)
+          || (excluded != nil
+            && url.lastPathComponent.precomposedStringWithCanonicalMapping == excludedName
+            && normalizedPath(url.path) == excluded)
+        {
           items.skipDescendants()
         }
         continue
@@ -179,13 +196,27 @@ enum LocalProviders {
         cwd: cwd)
     }
   }
-  static func claudeSessions(root: String) throws -> [AgentEntry] {
+  static let claudeProjectLimit = 200
+  static func claudeStatus(limited: Bool) -> String {
+    limited ? "Claude Code 로컬 세션 · 일부 범위만 검색" : "Claude Code 로컬 세션"
+  }
+  /// Directory listing order is unrelated to recency, so the cap applies to the newest folders.
+  static func newestDirectories(_ urls: [URL], limit: Int) -> ([URL], Bool) {
+    let folders = urls.filter {
+      (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+    }.sorted { modified($0) > modified($1) }
+    return (Array(folders.prefix(limit)), folders.count > limit)
+  }
+  static func claudeSessions(root: String) throws -> ([AgentEntry], Bool) {
     let projects = URL(fileURLWithPath: root).appendingPathComponent("projects")
     let fm = FileManager.default
-    let dirs = try fm.contentsOfDirectory(
-      at: projects, includingPropertiesForKeys: [.isDirectoryKey], options: .skipsHiddenFiles)
+    let (dirs, limited) = newestDirectories(
+      try fm.contentsOfDirectory(
+        at: projects, includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey],
+        options: .skipsHiddenFiles),
+      limit: claudeProjectLimit)
     var candidates = [URL]()
-    for dir in dirs.prefix(200) {
+    for dir in dirs {
       candidates +=
         ((try? fm.contentsOfDirectory(
           at: dir, includingPropertiesForKeys: [.contentModificationDateKey],
@@ -195,7 +226,7 @@ enum LocalProviders {
         }
     }
     candidates.sort { modified($0) > modified($1) }
-    return candidates.prefix(24).compactMap { url in
+    let sessions: [AgentEntry] = candidates.prefix(24).compactMap { url in
       guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
       defer { try? handle.close() }
       let size = (try? handle.seekToEnd()) ?? 0
@@ -214,6 +245,7 @@ enum LocalProviders {
       return parseClaude(
         records, id: url.deletingPathExtension().lastPathComponent, modified: modified(url))
     }
+    return (sessions, limited)
   }
   static func modified(_ url: URL) -> Double {
     (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate?

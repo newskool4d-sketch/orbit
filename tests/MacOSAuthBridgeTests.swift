@@ -122,6 +122,50 @@ final class DdayStore {
     KeychainStore.failWrites = false
     _ = try await failing.request(path: "/tasks/v1/users/@me/lists")
     check("failed credential save preserves account", failedSave && KeychainStore.values["google-tokens"] == beforeFailure && afterFailureAuthorization == "Bearer fixture-access-a")
+
+    // An expired access token forces the refresh grant, which the fixture rejects as invalid_grant.
+    try seed()
+    KeychainStore.values["google-tokens"] = try JSONEncoder().encode(OAuthTokens(access: "fixture-access-a", refresh: "fixture-refresh-a", expires: 0))
+    var tokenCalls = 0
+    var apiCalls = 0
+    let expired = GoogleClient(transport: { request in
+      if request.url?.host == "oauth2.googleapis.com" {
+        tokenCalls += 1
+        return try self.response(request, ["error": "invalid_grant", "error_description": "fixture-detail"], status: 400)
+      }
+      apiCalls += 1
+      return try self.response(request, [:])
+    })
+    var firstMessage = ""
+    do { _ = try await expired.request(path: "/tasks/v1/users/@me/lists") } catch { firstMessage = error.localizedDescription }
+    var secondMessage = ""
+    do { _ = try await expired.request(path: "/tasks/v1/users/@me/lists") } catch { secondMessage = error.localizedDescription }
+    check("invalid_grant asks to reconnect without echoing the response", firstMessage.contains("다시 연결") && !firstMessage.contains("fixture-detail"))
+    check("invalid_grant stops repeated refresh attempts", tokenCalls == 1 && apiCalls == 0 && secondMessage == firstMessage)
+    check("invalid_grant keeps the stored account for reconnect", expired.connected && KeychainStore.values["google-tokens"] != nil)
+    var reconnectAuthorization = ""
+    expired.transport = { request in
+      let fields = String(data: request.httpBody ?? Data(), encoding: .utf8) ?? ""
+      if fields.contains("grant_type=authorization_code") {
+        return try self.response(request, ["access_token": "fixture-access-c", "refresh_token": "fixture-refresh-c", "expires_in": 3600])
+      }
+      reconnectAuthorization = request.value(forHTTPHeaderField: "Authorization") ?? ""
+      return try self.response(request, [:])
+    }
+    try await expired.connect()
+    _ = try await expired.request(path: "/tasks/v1/users/@me/lists")
+    check("reconnect clears the invalid_grant state", reconnectAuthorization == "Bearer fixture-access-c")
+
+    // Other token errors are not treated as a revoked grant and keep retrying.
+    try seed()
+    KeychainStore.values["google-tokens"] = try JSONEncoder().encode(OAuthTokens(access: "fixture-access-a", refresh: "fixture-refresh-a", expires: 0))
+    var clientErrorCalls = 0
+    let misconfigured = GoogleClient(transport: { request in
+      clientErrorCalls += 1
+      return try self.response(request, ["error": "invalid_client"], status: 400)
+    })
+    for _ in 0..<2 { _ = try? await misconfigured.request(path: "/tasks/v1/users/@me/lists") }
+    check("other token errors still retry", clientErrorCalls == 2)
     KeychainStore.values = [:]
   }
 

@@ -31,23 +31,31 @@ internal sealed class LocalSnapshot
 }
 internal static class LocalProviders
 {
-    static readonly HashSet<string> Extensions=new(StringComparer.OrdinalIgnoreCase){".pdf",".hwpx",".hwp",".docx",".xlsx",".pptx",".md",".txt",".csv",".png",".jpg",".jpeg"};
+    // Same list as macOS and the Windows design: Google Drive shows Docs/Sheets/Slides as .gdoc/.gsheet/.gslides.
+    static readonly HashSet<string> Extensions=new(StringComparer.OrdinalIgnoreCase){".md",".pdf",".hwpx",".hwp",".docx",".xlsx",".pptx",".txt",".csv",".html",".gdoc",".gsheet",".gslides"};
     public static JsonObject Status(string source,string state,string message,int count=0,bool limited=false)=>new(){["source"]=source,["state"]=state,["message"]=message,["updated"]=DateTimeOffset.UtcNow.ToUnixTimeSeconds(),["limited"]=limited,["stale"]=false};
     public static LocalSnapshot Read(Settings settings,LocalSnapshot? previous=null)
     {
         var result=new LocalSnapshot(previous);
-        Files(settings.Drive,"drive",result);Files(settings.Vault,"obsidian",result);
+        // A vault inside the Drive folder is listed once, as Obsidian, without using the Drive budget.
+        Files(settings.Drive,"drive",result,null,settings.Vault);Files(settings.Vault,"obsidian",result);
         Claude(settings.Claude,result);
         CodexProvider.Read(settings.Codex,result);
         result.SortByRecency();
         return result;
     }
     static readonly HashSet<string> ExcludedFolders=new(StringComparer.OrdinalIgnoreCase){"node_modules","build","dist","vendor"};
-    internal static void Files(string root,string source,LocalSnapshot result,Func<string,IEnumerable<string>>? enumerate=null)
+    static string? FolderKey(string? path)
+    {
+        if(string.IsNullOrWhiteSpace(path))return null;
+        try{return Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));}catch{return null;}
+    }
+    internal static void Files(string root,string source,LocalSnapshot result,Func<string,IEnumerable<string>>? enumerate=null,string? exclude=null)
     {
         if(!Directory.Exists(root)){result.Statuses.Add(Status(source,"disconnected","폴더를 선택하세요."));return;}
         if(!ReparsePolicy.Safe(root)){result.Statuses.Add(Status(source,"error","폴더 접근을 확인하세요.",0,true));return;}
         var watch=Stopwatch.StartNew();int visited=0;bool limited=false,rootFailed=false;
+        var excluded=FolderKey(exclude);
         var candidates=new List<(FileInfo File,long Modified)>();var stack=new Stack<(string Path,int Depth)>();stack.Push((root,0));
         enumerate??=Directory.EnumerateFileSystemEntries;
         while(stack.Count>0&&visited<20000&&watch.Elapsed.TotalSeconds<4)
@@ -63,7 +71,7 @@ internal static class LocalProviders
                     if(name.StartsWith('.')||(attributes&FileAttributes.Hidden)!=0)continue;
                     if(!ReparsePolicy.Safe(path)){limited=true;continue;}
                     if((attributes&FileAttributes.Directory)!=0){
-                        if(ExcludedFolders.Contains(name))continue;
+                        if(ExcludedFolders.Contains(name)||excluded!=null&&string.Equals(FolderKey(path),excluded,StringComparison.OrdinalIgnoreCase))continue;
                         if(depth<7)stack.Push((path,depth+1));else limited=true;
                     }
                     else if(Extensions.Contains(Path.GetExtension(path))) {
@@ -86,17 +94,21 @@ internal static class LocalProviders
         result.Statuses.Add(Status(source,rootFailed?"error":"connected",rootFailed?"폴더 접근을 확인하세요.":limited?"일부 범위만 검색됨 · 폴더 접근/동기화 상태 확인 필요":"최근 수정 파일 연결됨",0,limited));
     }
     static string Text(JsonNode? n)=>n is JsonValue v&&v.TryGetValue<string>(out var s)?s:"";
-    static void Claude(string root,LocalSnapshot result)
+    internal const int ClaudeProjectLimit=200;
+    internal static void Claude(string root,LocalSnapshot result)
     {
         if(!Directory.Exists(root)){result.Statuses.Add(Status("claude","disconnected","Claude Code 폴더를 선택하세요."));return;}
-        var watch=Stopwatch.StartNew();var files=new List<FileInfo>();int visited=0;bool limited=false;
+        var watch=Stopwatch.StartNew();var files=new List<FileInfo>();bool limited=false;
         try
         {
-            foreach(var dir in Directory.EnumerateDirectories(root).Take(201))
+            // Directory order is unrelated to recency, so the cap applies to the newest project folders.
+            var directories=Directory.EnumerateDirectories(root).Select(folder=>new DirectoryInfo(folder)).OrderByDescending(info=>info.LastWriteTimeUtc).ToList();
+            limited|=directories.Count>ClaudeProjectLimit;
+            foreach(var dir in directories.Take(ClaudeProjectLimit))
             {
-                if(++visited>200||watch.Elapsed.TotalSeconds>4){limited=true;break;}
-                if(!ReparsePolicy.Safe(dir)){limited=true;continue;}
-                foreach(var path in Directory.EnumerateFiles(dir,"*.jsonl"))
+                if(watch.Elapsed.TotalSeconds>4){limited=true;break;}
+                if(!ReparsePolicy.Safe(dir.FullName)){limited=true;continue;}
+                foreach(var path in Directory.EnumerateFiles(dir.FullName,"*.jsonl"))
                 {
                     if(files.Count>=20000||watch.Elapsed.TotalSeconds>4){limited=true;break;}
                     if(PathPolicy.Within(root,path))files.Add(new(path));

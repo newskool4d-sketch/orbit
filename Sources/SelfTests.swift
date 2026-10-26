@@ -178,6 +178,10 @@ enum SelfTests {
     check(
       "deleted task omitted",
       GoogleClient.parseTask(["id": "a", "deleted": true], listID: "l", list: "L") == nil)
+    check(
+      "hidden completed task kept",
+      GoogleClient.parseTask(
+        ["id": "a", "hidden": true, "status": "completed"], listID: "l", list: "L")?.completed == true)
     do {
       let client = GoogleClient(
         loadKeychain: false,
@@ -225,6 +229,52 @@ enum SelfTests {
       check(
         "metadata scan filters symlinks/extensions",
         files.count == 1 && files.first?.name == "한글 문서.md")
+      let vaultDir = root.appendingPathComponent("vault")
+      try fm.createDirectory(at: vaultDir, withIntermediateDirectories: true)
+      for i in 0..<3 { try Data("fixture".utf8).write(to: vaultDir.appendingPathComponent("note-\(i).md")) }
+      let unscoped = try LocalProviders.recentFiles(path: root.path, source: "drive").0
+      let driveOnly = try LocalProviders.recentFiles(
+        path: root.path, source: "drive", excluding: vaultDir.path
+      ).0
+      check("symlink file does not hide a sibling folder", unscoped.count == 4)
+      check(
+        "drive scan skips a vault inside the Drive folder",
+        driveOnly.count == 1 && driveOnly.first?.name == "한글 문서.md")
+      let missing = root.appendingPathComponent("missing").path
+      let combined = LocalProviders.scan(
+        drive: root.path, vault: vaultDir.path, codex: missing, claude: missing)
+      check(
+        "vault files are listed once as Obsidian",
+        combined.files.count == 4 && Set(combined.files.map { $0.path }).count == 4
+          && combined.files.filter { $0.source == "obsidian" }.count == 3)
+      try fm.removeItem(at: vaultDir)
+      let projectsDir = root.appendingPathComponent("claude-fixture/projects")
+      let old = Date(timeIntervalSince1970: 1_000_000)
+      var ordered = [URL]()
+      for i in 0..<LocalProviders.claudeProjectLimit {
+        let dir = projectsDir.appendingPathComponent(String(format: "a%03d", i))
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        try fm.setAttributes([.modificationDate: old], ofItemAtPath: dir.path)
+        ordered.append(dir)
+      }
+      let recentDir = projectsDir.appendingPathComponent("zzz-recent")
+      try fm.createDirectory(at: recentDir, withIntermediateDirectories: true)
+      let sessionID = "12345678-1234-1234-1234-123456789abd"
+      try Data("{\"type\":\"user\",\"cwd\":\"/tmp/Recent\",\"message\":{\"content\":\"fixture\"}}\n".utf8)
+        .write(to: recentDir.appendingPathComponent(sessionID + ".jsonl"))
+      ordered.append(recentDir)
+      let (newest, capped) = LocalProviders.newestDirectories(
+        ordered, limit: LocalProviders.claudeProjectLimit)
+      check(
+        "project cap keeps the newest folder even when listed last",
+        capped && newest.count == LocalProviders.claudeProjectLimit && newest.first == recentDir)
+      let (sessions, limited) = try LocalProviders.claudeSessions(
+        root: root.appendingPathComponent("claude-fixture").path)
+      check(
+        "Claude sessions report the folder cap and keep recent work",
+        limited && sessions.contains { $0.sessionID == sessionID }
+          && LocalProviders.claudeStatus(limited: limited).contains("일부"))
+      try fm.removeItem(at: root.appendingPathComponent("claude-fixture"))
       let dbPath = root.appendingPathComponent("fixture.sqlite").path
       var db: OpaquePointer?
       sqlite3_open(dbPath, &db)
