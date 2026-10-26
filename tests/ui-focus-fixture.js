@@ -3,7 +3,7 @@
   const check = (name, passed) => results.push({name, passed: Boolean(passed)});
   const now = Math.floor(Date.now()/1000);
   const base = {kind:'snapshot', platform:'macos', theme:'moss', pinned:false, refreshing:false,
-    settings:{googleConnected:true,textSize:'normal'}, capabilities:{dday:true}, statuses:[], ddayError:'',
+    settings:{googleConnected:true,textSize:'normal'}, capabilities:{dday:true}, statuses:['drive','obsidian','codex','claude'].map(source=>({source,state:'connected',message:'fixture'})), ddayError:'',
     files:['a','b','c'].map((id,index)=>({id:'file-'+id,name:'fixture-'+id+'.md',parent:'fixture',source:'obsidian',modified:now-index})),
     agents:[{id:'agent-a',provider:'codex',title:'fixture',project:'fixture',status:'최근 기록',updated:now}],
     tasks:['a','b'].map(id=>({id:'task-'+id,title:'fixture',completed:false,due:'',list:'fixture',mutationState:'idle'})),
@@ -78,5 +78,26 @@
   check('plain K does not activate search',activeTab==='today');
   settings(true,document.querySelector('#settings-button'));document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
   check('Escape closes settings and restores focus',document.querySelector('#settings').hidden&&document.activeElement.id==='settings-button');
+  const localText=selector=>document.querySelector(selector).textContent;
+  const states=state=>base.statuses.map(s=>({...s,state,message:'PRIVATE_EXCEPTION_MARKER'}));
+  apply({files:[],agents:[],statuses:[],refreshing:true});tab('files');
+  check('initial file scan shows reading instead of setup',localText('#file-list').includes('읽고 있습니다')&&!localText('#file-list').includes('연결 설정'));
+  tab('agents');check('initial agent scan shows reading',localText('#agent-list').includes('읽고 있습니다'));
+  apply({files:[],agents:[]});check('connected empty agents show normal empty state',localText('#agent-list').includes('기록이 없습니다'));
+  apply({files:[],agents:[],statuses:states('error')});
+  check('agent error replaces misleading empty state',localText('#agent-list').includes('읽지 못했습니다')&&!localText('#agent-list').includes('기록이 없습니다'));
+  tab('files');check('file error hides raw exception',localText('#file-list').includes('읽지 못했습니다')&&!localText('#file-list').includes('PRIVATE_EXCEPTION_MARKER'));
+  document.querySelector('#file-list [data-connection="obsidian"][data-action="settings"]').click();
+  check('error recovery opens settings',!document.querySelector('#settings').hidden);
+  settings(false);check('error recovery restores exact source opener',document.activeElement.getAttribute('data-connection')==='obsidian');
+  apply({files:[],agents:[],statuses:states('disconnected')});
+  check('disconnected file source requests connection',localText('#file-list').includes('연결이 필요합니다'));
+  apply({statuses:base.statuses.map(s=>s.source==='drive'?{...s,state:'error'}:s)});fileSource='obsidian';renderFiles();
+  check('file filter excludes unrelated source errors',!localText('#file-list').includes('읽지 못했습니다')&&Boolean(document.querySelector('#file-list [data-file]')));
+  fileSource='all';apply({statuses:base.statuses.map(s=>s.source==='obsidian'?{...s,limited:true}:s)});
+  check('partial scan retains file cards and coverage notice',localText('#file-list').includes('일부 범위만')&&document.querySelectorAll('#file-list [data-file]').length===3);
+  document.querySelector('#file-search').value='no-fixture-match';renderFiles();
+  check('partial scan search reports no matches within read files',localText('#file-list').includes('현재 읽은 파일 중 검색 결과가 없습니다')&&localText('#file-list').includes('일부 범위만'));
+  document.querySelector('#file-search').value='';apply();
   return results;
 })()

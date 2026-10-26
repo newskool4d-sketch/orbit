@@ -68,7 +68,8 @@ internal static class PathPolicy
         {
             root=Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
             path=Path.GetFullPath(path);
-            if (!path.StartsWith(root+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase)) return false;
+            var boundary=Path.EndsInDirectorySeparator(root)?root:root+Path.DirectorySeparatorChar;
+            if (string.Equals(path,root,StringComparison.OrdinalIgnoreCase) || !path.StartsWith(boundary,StringComparison.OrdinalIgnoreCase)) return false;
             var cursor=path;
             while (!string.Equals(cursor,root,StringComparison.OrdinalIgnoreCase))
             {

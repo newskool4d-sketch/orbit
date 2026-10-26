@@ -57,7 +57,7 @@ web = (output / 'web-tests.log').read_text()
 native_match = re.search(r'Orbit tests: (\d+) passed, 0 failed', native)
 assert native_match and int(native_match[1]) >= 54, 'Mac regressions were not all executed'
 web_count = re.search(r'(?:# |ℹ )?tests (\d+)', web)
-assert web_count and int(web_count[1]) == 38, 'Shared web tests were not all executed'
+assert web_count and int(web_count[1]) == 43, 'Shared web tests were not all executed'
 tracked = subprocess.check_output(['git', 'ls-files', '-z'], cwd=root).decode().split('\0')
 manifest = '\n'.join(f'{p} {hashlib.sha256((root / p).read_bytes()).hexdigest()}' for p in sorted(filter(None, tracked)))
 info = {

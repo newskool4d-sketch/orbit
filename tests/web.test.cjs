@@ -36,6 +36,8 @@ test('NFC typed Korean matches NFD Google Drive filenames and preserves filterin
     ], statuses: [] },
     fileCard: file => file.id,
     empty: text => text,
+    localSourceNotice: () => '',
+    status: () => ({state:'connected'}),
   });
   const declaration = source.split('\n').find(line => line.startsWith('function renderFiles()'));
   vm.runInContext(declaration + ';renderFiles();', context);

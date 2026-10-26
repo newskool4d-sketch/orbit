@@ -300,6 +300,9 @@ body[data-text-size="xlarge"] .settings-bottom {
 }
 .dday-pin { margin: 4px 0 0; }
 .form-error { margin: 10px 0 0; color: var(--orange); font-size: var(--font-meta); }
+.local-source-notice { grid-column: 1 / -1; }
+.local-source-notice p { margin: 0 0 8px; }
+.local-source-notice button { margin: 0 8px 4px 0; }
 .dday-manage { padding: 13px 0; border-bottom: 1px solid var(--line); }
 .dday-manage.archived { opacity: .72; }
 .dday-main { display: flex; gap: 11px; align-items: flex-start; }

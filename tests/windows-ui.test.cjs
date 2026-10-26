@@ -13,6 +13,7 @@ function fixture() {
     state: { platform: 'windows', events: [], tasks: [], files: [], agents: [], statuses: [], settings: { googleConnected: true }, refreshing: false },
     busyTasks: new Set(), showAllTasks: false, status: () => ({ state: 'connected' }),
     warning: () => '', empty: () => '', dayKey: () => '2026-09-07', icon: () => '', relative: () => '',
+    localSourceNotice: () => '',
     labels: { claude: 'Claude Code' }, act: (action, args) => calls.push({ action, args }),
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../Resources/platform.js'), 'utf8'), context);

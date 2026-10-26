@@ -24,6 +24,10 @@ internal sealed class LocalSnapshot
     public List<JsonObject> Statuses {get;}=[];
     public Dictionary<string,FileTarget> FileMap {get;}=new();
     public Dictionary<string,string> AgentMap {get;}=new();
+    public void SortByRecency() {
+        Files.Sort((a,b)=>b["modified"]!.GetValue<long>().CompareTo(a["modified"]!.GetValue<long>()));
+        Agents.Sort((a,b)=>b["updated"]!.GetValue<long>().CompareTo(a["updated"]!.GetValue<long>()));
+    }
 }
 internal static class LocalProviders
 {
@@ -35,37 +39,51 @@ internal static class LocalProviders
         Files(settings.Drive,"drive",result);Files(settings.Vault,"obsidian",result);
         Claude(settings.Claude,result);
         CodexProvider.Read(settings.Codex,result);
+        result.SortByRecency();
         return result;
     }
-    static void Files(string root,string source,LocalSnapshot result)
+    static readonly HashSet<string> ExcludedFolders=new(StringComparer.OrdinalIgnoreCase){"node_modules","build","dist","vendor"};
+    internal static void Files(string root,string source,LocalSnapshot result,Func<string,IEnumerable<string>>? enumerate=null)
     {
         if(!Directory.Exists(root)){result.Statuses.Add(Status(source,"disconnected","폴더를 선택하세요."));return;}
-        var watch=Stopwatch.StartNew();int visited=0;bool limited=false;
-        var candidates=new List<FileInfo>();var stack=new Stack<(string Path,int Depth)>();stack.Push((root,0));
-        try
+        if(!ReparsePolicy.Safe(root)){result.Statuses.Add(Status(source,"error","폴더 접근을 확인하세요.",0,true));return;}
+        var watch=Stopwatch.StartNew();int visited=0;bool limited=false,rootFailed=false;
+        var candidates=new List<(FileInfo File,long Modified)>();var stack=new Stack<(string Path,int Depth)>();stack.Push((root,0));
+        enumerate??=Directory.EnumerateFileSystemEntries;
+        while(stack.Count>0&&visited<20000&&watch.Elapsed.TotalSeconds<4)
         {
-            while(stack.Count>0&&visited<20000&&watch.Elapsed.TotalSeconds<4)
+            var (folder,depth)=stack.Pop();
+            try
             {
-                var (folder,depth)=stack.Pop();
-                foreach(var path in Directory.EnumerateFileSystemEntries(folder))
+                foreach(var path in enumerate(folder))
                 {
                     if(++visited>20000||watch.Elapsed.TotalSeconds>=4){limited=true;break;}
                     FileAttributes attributes;try{attributes=File.GetAttributes(path);}catch{limited=true;continue;}
+                    var name=Path.GetFileName(path);
+                    if(name.StartsWith('.')||(attributes&FileAttributes.Hidden)!=0)continue;
                     if(!ReparsePolicy.Safe(path)){limited=true;continue;}
-                    if((attributes&FileAttributes.Directory)!=0){if(depth<7)stack.Push((path,depth+1));else limited=true;}
-                    else if(Extensions.Contains(Path.GetExtension(path)))candidates.Add(new FileInfo(path));
+                    if((attributes&FileAttributes.Directory)!=0){
+                        if(ExcludedFolders.Contains(name))continue;
+                        if(depth<7)stack.Push((path,depth+1));else limited=true;
+                    }
+                    else if(Extensions.Contains(Path.GetExtension(path))) {
+                        try {
+                            var file=new FileInfo(path);
+                            if(!PathPolicy.Within(root,file.FullName)){limited=true;continue;}
+                            candidates.Add((file,new DateTimeOffset(file.LastWriteTimeUtc).ToUnixTimeSeconds()));
+                        }catch{limited=true;}
+                    }
                 }
             }
-            limited|=stack.Count>0;
-            foreach(var f in candidates.OrderByDescending(f=>f.LastWriteTimeUtc).Take(30))
-            {
-                if(!PathPolicy.Within(root,f.FullName)){limited=true;continue;}
-                var id=result.DisplayId("file:"+source+":"+root+"\0"+f.FullName);result.FileMap[id]=new(root,f.FullName);
-                result.Files.Add(new(){["id"]=id,["source"]=source,["name"]=f.Name,["parent"]=f.Directory?.Name??"",["modified"]=new DateTimeOffset(f.LastWriteTimeUtc).ToUnixTimeSeconds()});
-            }
-            result.Statuses.Add(Status(source,"connected",limited?"일부 범위만 검색됨 · 링크/클라우드 파일 검증 필요":"최근 수정 파일 연결됨",0,limited));
+            catch {limited=true;rootFailed|=depth==0;}
         }
-        catch { result.Statuses.Add(Status(source,"error","폴더 접근을 확인하세요.",0,true)); }
+        limited|=stack.Count>0;
+        foreach(var (f,modified) in candidates.OrderByDescending(f=>f.Modified).Take(30)) {
+            if(!PathPolicy.Within(root,f.FullName)){limited=true;continue;}
+            var id=result.DisplayId("file:"+source+":"+root+"\0"+f.FullName);result.FileMap[id]=new(root,f.FullName);
+            result.Files.Add(new(){["id"]=id,["source"]=source,["name"]=f.Name,["parent"]=f.Directory?.Name??"",["modified"]=modified});
+        }
+        result.Statuses.Add(Status(source,rootFailed?"error":"connected",rootFailed?"폴더 접근을 확인하세요.":limited?"일부 범위만 검색됨 · 폴더 접근/동기화 상태 확인 필요":"최근 수정 파일 연결됨",0,limited));
     }
     static string Text(JsonNode? n)=>n is JsonValue v&&v.TryGetValue<string>(out var s)?s:"";
     static void Claude(string root,LocalSnapshot result)

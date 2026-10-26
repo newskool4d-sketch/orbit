@@ -67,13 +67,15 @@ bash scripts/test-macos-auth-bridge.sh
 
 테스트는 가상 데이터로 OAuth 응답 검증, PKCE, 셸 인자, Google 응답 처리, 할 일 PATCH, 한글 파일 검색, 읽기 전용 SQLite, 내부 작업 필터를 검사합니다. smoke-test는 개인 파일명이나 작업 제목을 출력하지 않고 건수와 연결 상태만 출력합니다.
 
-`test-macos-auth-bridge.sh`는 실제 GoogleClient·Bridge와 공용 UI를 격리한 macOS 시험 앱에서 검사합니다. 신규 로그인·토큰 갱신·저장 실패, 초기 로드·재로드 응답과 화면 갱신 후 포커스·설정 모달·한글 및 조합 중 검색 단축키를 검증합니다. 합성 데이터의 시험 창을 잠시 표시하며 실제 Google 인증·키체인·사용자 데이터 저장소는 사용하지 않습니다. WebKit 시스템 서비스를 실행할 수 있는 macOS 세션이 필요합니다.
+`test-macos-auth-bridge.sh`는 실제 GoogleClient·Bridge와 공용 UI를 격리한 macOS 시험 앱에서 검사합니다. 신규 로그인·토큰 갱신·저장 실패, 초기 로드·재로드 응답과 화면 갱신 후 포커스·설정 모달·한글 및 조합 중 검색 단축키, 로컬 소스의 읽는 중·정상 빈 결과·연결 필요·오류·부분 검색 안내와 복구 동작을 검증합니다. 합성 데이터의 시험 창을 잠시 표시하며 실제 Google 인증·키체인·사용자 데이터 저장소는 사용하지 않습니다. WebKit 시스템 서비스를 실행할 수 있는 macOS 세션이 필요합니다.
 
 앱은 개인용 ad-hoc 서명입니다. App Store 배포·공증 대상이 아니며 macOS 키체인 접근 확인이 나타날 수 있습니다. Codex/Claude의 로컬 기록 형식이나 URL 처리 방식이 바뀌면 해당 연결 코드 조정이 필요합니다.
 
 macOS DMG는 `bash scripts/package-macos.sh` 또는 GitHub Actions의 수동 **macOS DMG preview**로 생성합니다. 패키지 검증·초안 릴리스·공개 절차는 [macOS 릴리스 안내](docs/macos-release.md)를 확인하세요.
 
 ## 검증 경계
+
+2026-10-26의 R06~R09 수정·검증 범위는 [정렬·경로·탐색·오류 안내 기록](docs/plans/2026-10-26-local-source-fixes.md)을 참조하세요. Windows 변경은 네이티브 전체 gate가 남아 있으며 macOS 검증으로 대체하지 않습니다.
 
 2026-09-06 기준 설치 앱의 패널 표시, 캘린더 탭과 7일 일정 목록, 최근 파일 한글 검색, Claude Code 필터, 설정 열기/닫기, Moss·Pearl·Midnight 전환, 고정 on/off, 수동 새로고침을 확인했습니다. Swift 32개 + 웹 5개 테스트 및 빌드·서명 검증이 통과했습니다. 로컬 smoke-test 결과는 파일 60개, Codex 24개, Claude Code 13개이며 네 소스 모두 연결됨입니다.
 

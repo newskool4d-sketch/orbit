@@ -93,6 +93,7 @@ internal static class SelfTests
             Check(!PathPolicy.Https("file:///fixture")&&!PathPolicy.Https("https://user:pass@example.com"),"external-link-policy");
 
             DdaySelfTests.Run(Check);
+            LocalProviderRegressionTests();
 
             Check(ReparsePolicy.Cloud(0x9000001A)&&ReparsePolicy.Cloud(0x9000F01A)&&!ReparsePolicy.Cloud(0xA000000C),"cloud-tag-vs-symlink");
             var fixtureRoot=Path.Combine(Path.GetTempPath(),"Orbit-files-fixture-"+Guid.NewGuid().ToString("N"));
@@ -112,6 +113,55 @@ internal static class SelfTests
             }finally{foreach(var p in Directory.GetFiles(fixtureRoot))File.Delete(p);Directory.Delete(fixtureRoot);}
 Console.WriteLine($"RESULT passed={count} failed=0");return 0;
         }catch(Exception e){Console.WriteLine($"RESULT passed={count} failed=1 test={e.Message}");return 1;}
+    }
+    static void LocalProviderRegressionTests()
+    {
+        var snapshot=new LocalSnapshot();
+        snapshot.Files.Add(new(){["source"]="drive",["modified"]=10L});
+        snapshot.Files.Add(new(){["source"]="obsidian",["modified"]=30L});
+        snapshot.Files.Add(new(){["source"]="drive",["modified"]=20L});
+        snapshot.Agents.Add(new(){["provider"]="claude",["updated"]=10L});
+        snapshot.Agents.Add(new(){["provider"]="codex",["updated"]=30L});
+        snapshot.Agents.Add(new(){["provider"]="claude",["updated"]=20L});
+        snapshot.SortByRecency();
+        Check(snapshot.Files.Select(x=>x["modified"]!.GetValue<long>()).SequenceEqual(new long[]{30,20,10}),"mixed-source-files-latest-first");
+        Check(snapshot.Agents.Select(x=>x["updated"]!.GetValue<long>()).SequenceEqual(new long[]{30,20,10}),"mixed-provider-agents-latest-first");
+        var root=Path.Combine(Path.GetTempPath(),"Orbit-scan-fixture-"+Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try {
+            var kept=Path.Combine(root,"kept.md");File.WriteAllText(kept,"fixture");
+            foreach(var name in new[]{".trash","node_modules","build","dist","vendor","hidden"}) {
+                var folder=Path.Combine(root,name);Directory.CreateDirectory(folder);
+                File.WriteAllText(Path.Combine(folder,"ignored.md"),"fixture");
+                if(name=="hidden")File.SetAttributes(folder,File.GetAttributes(folder)|FileAttributes.Hidden);
+            }
+            var regular=Path.Combine(root,"regular");Directory.CreateDirectory(regular);
+            var newest=Path.Combine(regular,"newest.md");File.WriteAllText(newest,"fixture");
+            File.SetLastWriteTimeUtc(kept,new DateTime(2020,1,1,0,0,0,DateTimeKind.Utc));
+            File.SetLastWriteTimeUtc(newest,new DateTime(2030,1,1,0,0,0,DateTimeKind.Utc));
+            Check(PathPolicy.Within(Path.GetPathRoot(kept)!,kept),"drive-root-descendant-allowed");
+            Check(PathPolicy.Within(root+Path.DirectorySeparatorChar,kept),"trailing-separator-descendant-allowed");
+            Check(!PathPolicy.Within(root,root)&&!PathPolicy.Within(root,Path.Combine(root,"..","outside.md"))&&!PathPolicy.Within(root,root+"-sibling/fixture.md"),"path-self-parent-and-prefix-rejected");
+            var filtered=new LocalSnapshot();LocalProviders.Files(root,"drive",filtered);
+            Check(filtered.Files.Count==2&&filtered.Files[0]["name"]!.ToString()=="newest.md","excluded-folders-and-hidden-entries-omitted");
+            Check(filtered.Statuses[0]["limited"]!.GetValue<bool>()==false,"intentional-exclusions-are-not-partial-failures");
+            var denied=Path.Combine(root,"denied");Directory.CreateDirectory(denied);
+            IEnumerable<string> Entries(string folder) {
+                if(folder==denied)throw new UnauthorizedAccessException("fixture");
+                return Directory.EnumerateFileSystemEntries(folder);
+            }
+            var partial=new LocalSnapshot();LocalProviders.Files(root,"drive",partial,Entries);
+            Check(partial.Files.Count==2&&partial.Statuses[0]["state"]!.ToString()=="connected"&&partial.Statuses[0]["limited"]!.GetValue<bool>(),"denied-child-preserves-sibling-results-with-partial-status");
+            IEnumerable<string> LateFailure(string folder) {
+                yield return kept;
+                throw new IOException("fixture");
+            }
+            var rootFailure=new LocalSnapshot();LocalProviders.Files(root,"drive",rootFailure,LateFailure);
+            Check(rootFailure.Files.Count==1&&rootFailure.Statuses[0]["state"]!.ToString()=="error"&&rootFailure.Statuses[0]["limited"]!.GetValue<bool>(),"lazy-root-failure-keeps-collected-file-and-reports-error");
+            for(int i=0;i<35;i++)File.WriteAllText(Path.Combine(regular,$"fixture-{i}.md"),"fixture");
+            var capped=new LocalSnapshot();LocalProviders.Files(root,"drive",capped);
+            Check(capped.Files.Count==30,"per-source-thirty-file-cap-preserved");
+        }finally{Directory.Delete(root,true);}
     }
     static JsonObject CalendarEvent(string title="fixture")=>new()
     {

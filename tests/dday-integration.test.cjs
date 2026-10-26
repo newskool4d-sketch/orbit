@@ -56,6 +56,62 @@ function item(id, extra = {}) {
     createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', ...extra };
 }
 
+const localStatuses = (state = 'connected') => ['drive','obsidian','codex','claude'].map(source => ({source,state,message:'fixture'}));
+test('local tabs distinguish initial reading, connected empty, and connection required', () => {
+  const f=fixture();
+  f.snapshot({refreshing:true});
+  assert.match(f.get('#file-list').innerHTML,/읽고 있습니다/);
+  assert.match(f.get('#agent-list').innerHTML,/읽고 있습니다/);
+  assert.doesNotMatch(f.get('#file-list').innerHTML,/연결 설정|표시할 최근 파일/);
+  f.snapshot({refreshing:false,statuses:localStatuses()});
+  assert.match(f.get('#file-list').innerHTML,/표시할 최근 파일이 없습니다/);
+  assert.match(f.get('#agent-list').innerHTML,/로컬 작업 기록이 없습니다/);
+  assert.doesNotMatch(f.get('#file-list').innerHTML,/연결 설정/);
+  f.snapshot({refreshing:false,statuses:localStatuses('disconnected')});
+  assert.match(f.get('#file-list').innerHTML,/연결이 필요합니다/);
+  assert.match(f.get('#agent-list').innerHTML,/data-action="settings"/);
+});
+test('local read errors show safe recovery actions without echoing raw exceptions', () => {
+  const f=fixture();
+  f.snapshot({statuses:localStatuses('error').map(s=>({...s,message:'PRIVATE_EXCEPTION_MARKER'}))});
+  for(const id of ['#file-list','#agent-list','#recent-preview','#agents-preview']) {
+    assert.match(f.get(id).innerHTML,/읽지 못했습니다/);
+    assert.match(f.get(id).innerHTML,/data-action="refresh"/);
+    assert.match(f.get(id).innerHTML,/data-action="settings"/);
+    assert.doesNotMatch(f.get(id).innerHTML,/PRIVATE_EXCEPTION_MARKER|기록이 없습니다|표시할 최근 파일이 없습니다/);
+  }
+});
+test('local notices follow the active source filter and preserve usable cards', () => {
+  const f=fixture();
+  f.snapshot({statuses:localStatuses().map(s=>s.source==='claude'||s.source==='drive'?{...s,state:'error'}:s),
+    files:[{id:'f',source:'obsidian',name:'fixture.md',parent:'fixture',modified:1}],
+    agents:[{id:'a',provider:'codex',title:'fixture',updated:1}]});
+  assert.match(f.get('#file-list').innerHTML,/읽지 못했습니다/);
+  assert.match(f.get('#file-list').innerHTML,/data-file="f"/);
+  assert.match(f.get('#agent-list').innerHTML,/data-agent="a"/);
+  vm.runInContext("fileSource='obsidian';agentProvider='codex';renderFiles();renderAgents()",f.context);
+  assert.doesNotMatch(f.get('#file-list').innerHTML,/읽지 못했습니다|Drive ·/);
+  assert.doesNotMatch(f.get('#agent-list').innerHTML,/읽지 못했습니다|Claude Code ·/);
+});
+test('partial local scans keep cards and expose partial coverage for the active filter', () => {
+  const f=fixture();
+  f.snapshot({statuses:localStatuses().map(s=>s.source==='drive'?{...s,limited:true}:s),files:[{id:'f',source:'drive',name:'fixture.md',parent:'fixture',modified:1}]});
+  assert.match(f.get('#file-list').innerHTML,/일부 범위만 검색/);
+  assert.match(f.get('#file-list').innerHTML,/data-file="f"/);
+  assert.match(f.get('#file-description').textContent,/일부 범위/);
+  vm.runInContext("fileSource='obsidian';renderFiles()",f.context);
+  assert.doesNotMatch(f.get('#file-list').innerHTML,/일부 범위/);
+  assert.doesNotMatch(f.get('#file-description').textContent,/일부 범위/);
+});
+test('local recovery actions open settings or request a refresh through the existing bridge', async () => {
+  const f=fixture();f.snapshot({statuses:localStatuses('error')});
+  const click=action=>f.listeners.click[0]({target:{closest:()=>({disabled:false,dataset:{action},getAttribute:()=>null})}});
+  await click('settings');assert.equal(f.get('#settings').hidden,false);
+  click('refresh');assert.equal(f.calls.at(-1).action,'refresh');
+  f.snapshot({refreshing:true,statuses:localStatuses('error')});
+  assert.match(f.get('#file-list').innerHTML,/data-action="refresh" disabled/);
+});
+
 test('today renders 0/1/3/4 items without Google, excludes archived, and escapes titles', () => {
   const f = fixture();
   for (const count of [0, 1, 3, 4]) {
