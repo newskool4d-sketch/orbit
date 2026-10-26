@@ -28,7 +28,7 @@ internal sealed class ReadSqlite : IDisposable
     public static string Version=>Marshal.PtrToStringUTF8(Native.sqlite3_libversion())??"unknown";
     public ReadSqlite(string path)
     {
-        if(Version!="3.51.1")throw new IOException("sqlite-version-unverified");
+        if(Version!="3.51.1"&&Version!="3.53.4")throw new IOException("sqlite-version-unverified");
         if(!File.Exists(path))throw new IOException("database-missing");
         if(File.Exists(path+"-wal")&&!File.Exists(path+"-shm"))throw new IOException("wal-sidecar-unavailable");
         string uri=new Uri(Path.GetFullPath(path)).AbsoluteUri+"?mode=ro&readonly_shm=1";
