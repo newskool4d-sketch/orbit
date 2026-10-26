@@ -57,7 +57,7 @@ import WebKit
     popover.delegate = self
     bridge.load()
     timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-      Task { @MainActor in
+      Task { @MainActor [weak self] in
         guard let self = self, self.popover.isShown else { return }
         await self.bridge.refresh(forceFiles: false)
       }

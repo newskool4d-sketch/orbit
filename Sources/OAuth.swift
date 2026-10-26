@@ -120,7 +120,7 @@ enum OAuthHelpers {
     return try await withCheckedThrowingContinuation { cont in
       continuation = cont
       listener.stateUpdateHandler = { [weak self] status in
-        Task { @MainActor in
+        Task { @MainActor [weak self] in
           guard let self = self else { return }
           if case .ready = status, let port = listener.port {
             let redirect = "http://127.0.0.1:\(port.rawValue)/oauth/callback"
@@ -145,7 +145,7 @@ enum OAuthHelpers {
         }
       }
       listener.newConnectionHandler = { [weak self] connection in
-        Task { @MainActor in
+        Task { @MainActor [weak self] in
           connection.start(queue: .main)
           self?.receive(connection, buffer: Data(), state: state, verifier: verifier)
         }
@@ -162,7 +162,7 @@ enum OAuthHelpers {
   private func receive(_ connection: NWConnection, buffer: Data, state: String, verifier: String) {
     connection.receive(minimumIncompleteLength: 1, maximumLength: 8192) {
       [weak self] data, _, complete, error in
-      Task { @MainActor in
+      Task { @MainActor [weak self] in
         guard let self = self else {
           connection.cancel()
           return
