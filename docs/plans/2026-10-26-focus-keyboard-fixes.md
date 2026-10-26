@@ -57,5 +57,18 @@ macOS·Windows 플랫폼 값에서 각각 metaKey·ctrlKey와 key=k/ㅏ/Process 
 
 - macOS와 공용 UI의 이번 수정·자동 검증은 PASS임. 전체 플랫폼 판정은 Windows 네이티브 검증이 남아 PARTIAL임.
 - Windows 환경에서 `Windows/scripts/build.ps1` 후 `Windows/scripts/test.ps1 -NativeUi`를 수행해야 함. 추가한 C# 파일·AI·일정 ID 재사용 검사도 그때 실행됨.
-- build/Orbit.app에는 이번 변경이 반영되어 있으나 /Applications/Orbit.app은 이전 R01·R02 설치 상태임. 이번 요청에서는 설치본 교체·재실행을 추가 수행하지 않았음.
+- 초기 검증 시점에는 build/Orbit.app만 변경했음. 사용자의 후속 요청에 따른 최종 설치·배포 검증은 아래에 기록함.
 - 정기 검토의 R06~R09, 실제 입력기 전환, 보조공학 검증은 별도 후속 범위임.
+
+## 최종 통합 빌드·설치 검증
+
+- 원격 main의 Google 독립 동기화·날짜 검증·Swift 콜백 보완·DMG 배포 절차를 통합함. Windows 충돌은 독립 동기화 구조를 보존하면서 일정 ID 재사용을 적용하고 합성 fixture를 통합함.
+- 기준 소스 커밋: `d59dfd821e1f67fa665b3de9a5211be909487941`. 앱 버전 1.0.2, 빌드 3.
+- 깨끗한 소스에서 scripts/package-macos.sh 실행: macOS 자체 시험 54/54, 웹 시험 38/38, arm64·최소 OS·서명·DMG 무결성·읽기 전용 마운트본 자체 시험 54/54 통과.
+- 통합 후 scripts/test-macos-auth-bridge.sh의 실제 WKWebView 회귀 시험 45/45 통과.
+- 배포 DMG 내부 앱을 /Applications/Orbit.app에 설치함. 기존 앱을 정상 종료·백업하고 새 앱을 재실행함. 백업은 `~/Applications/.Orbit-backups/Orbit-before-20261026-focus-build3.app`에 보존함.
+- DMG·빌드·설치본의 번들 파일 12개가 SHA-256 기준으로 일치함. 설치본 자체 시험 54/54 통과. 단일 설치본 프로세스의 finishedLaunching=true·terminated=false 확인.
+- 실행 파일 SHA-256: `1b02fe53188c5edc712ca7bdf798407e1d9d888445de17488ac4fce05ea0074d`.
+- DMG SHA-256: `9173ad311371b845b4c3e1be3d5110a53df7aada96e995b6dbd5537033028797`.
+- 실제 개인 데이터 화면 검증 도구는 두 차례 timeoutReached를 반환함. dots 연결 확인을 요청했으며 실제 설치 화면에서의 포커스 유지·설정 Tab 순환·OS 한글 입력 상태 단축키 검증은 아직 미완료임. 합성 WKWebView 검증을 실제 OS 입력기 검증으로 보고하지 않음.
+- Windows 전체 gate는 실행하지 않았으며 Windows 배포 파일은 갱신하지 않음. macOS 배포는 기존과 같이 ad-hoc 서명이며 Apple 공증 없음.

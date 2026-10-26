@@ -62,7 +62,7 @@ bash scripts/test-macos-auth-bridge.sh
 
 사용자의 추가 요청에 따라 실행 중이던 `/Applications/Orbit.app`을 교체함. 사전 조사에서 `~/Applications/Orbit.app`도 존재했으나 실행 프로세스의 실제 번들 경로가 `/Applications/Orbit.app`이므로 그 경로를 대상으로 작업함.
 
-- 기존 설치본 백업: `/Users/hongjuhyeong/Applications/.Orbit-backups/Orbit-before-20261026-9e1d78dee4.app`.
+- 기존 설치본 백업: `~/Applications/.Orbit-backups/Orbit-before-20261026-9e1d78dee4.app`.
 - 기존 설치본 실행 파일 SHA-256: `95a88bb1a410feab8d882c0e88a6ddf4c413710b1befc6c2c612b38fe4769cbd`.
 - 교체 후 실행 파일 SHA-256: `8e44ce6c80baec50fec1c4562328dd4e1d2aa27b8b633b6dc51aa3b53aef1005`.
 - 기존 Orbit 1개를 정상 종료한 뒤 스테이징한 검증 빌드로 교체하고 `/Applications/Orbit.app`을 재실행함.
