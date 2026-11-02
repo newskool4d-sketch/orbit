@@ -15,7 +15,25 @@
 | 재시작 복원 | PASS | 격리 프로세스 2개에서 Pearl·xlarge·D-day 복원, 확인 과정 저장 파일 불변 |
 | macOS | 미검증 | build.sh 실행 시 xcrun 부재. macOS 실행 파일 없음. Sources·Resources 변경 없음 |
 
-실제 Google 쓰기, 실제 장치 ACL·링크·클라우드 경계, 다중 모니터 검증과 코드 서명은 이번 범위에 포함하지 않는다. 이는 위 Windows 자동 검증의 통과와 별개인 시험판 제한이다. 패키지·로컬 설치·게시 결과는 후속 기록으로 추가한다.
+실제 Google 쓰기, 실제 장치 ACL·링크·클라우드 경계, 다중 모니터 검증과 코드 서명은 이번 범위에 포함하지 않는다. 이는 위 Windows 자동 검증의 통과와 별개인 시험판 제한이다.
+
+### 패키지·로컬 설치
+
+후보 소스: `c3ddd5f0f8524d630715ff1e292b18d3c55ed0af`. Windows 11 10.0.26300, PowerShell 7.6.9, .NET 10.0.14, SDK 10.0.400. 코드 서명 상태는 `NotSigned`다.
+
+| 항목 | 상태 | 근거 |
+| --- | --- | --- |
+| 패키징 | PASS | package.ps1의 빌드·전체 gate·self-contained publish 및 배포본 자체 시험 124/124·UI 시험 통과 |
+| ZIP 식별 | PASS | `Orbit.Windows-20261102-183848.zip`, 77,101,712바이트. SHA-256 `ECA2FADF3E651D91EB2ABD01E6209D4F73DCE92C0D5E43771FC586BA84C02E65` |
+| 소스 일치 | PASS | BUILD-INFO의 baseCommit이 후보와 일치, workingTreeDirty=false. sourceManifestSha256 `9A03394E4DB636E661B488C3940E2CEFAC670176F5A3587034B1ADDB76B18D54` |
+| 설치 대상 | PASS | 기존 바로가기 2개가 `%LOCALAPPDATA%/Programs/Orbit/Orbit.Windows.exe`를 가리킴을 재확인 |
+| 설치·복구본 | PASS | ZIP에서 푼 498개 파일과 publish·설치 폴더 전체 해시 일치. 이전 프로그램 폴더는 `Orbit-backup-20261102-184031`에 보존하고 기존 파일 해시와 일치 확인 |
+| 사용자 데이터 | PASS | 프로그램 교체 및 정상 실행 전후 settings.json·ddays.json 해시 불변. 사용자 WebView2·자격증명을 교체 대상으로 삼지 않음 |
+| 설치본 자동 시험 | PASS | 실제 설치 경로 EXE의 자체 시험 124/124, SQLite 쓰기 0·해시 불변, D-day·배율 40조합·WebView2 왕복 통과 |
+| 정상 실행 | PASS | 설치 경로의 단일 프로세스 생존·응답 확인 |
+| 일반 패널 수동 조작 | 미검증 | UI 도구가 일반 실행의 트레이 패널을 targetable window로 찾지 못함. 설치 EXE의 합성 UI smoke·캡처와 구분 |
+
+이번 안정성 수정·자동 검증·설치 파일 일치는 PASS다. 실제 Google 연동·일반 패널의 이번 수동 조작·macOS 등 위 제한을 포함한 전체 기능 보증은 PARTIAL이며 정식 배포로 주장하지 않는다. 새 Windows 시험판으로 게시하며 기존 자산을 덮어쓰지 않는다.
 
 ## 2026-10-26 검증 (R03~R09·M1~M6 Windows 네이티브)
 
