@@ -99,6 +99,8 @@ internal static class SelfTests
             Check(!PathPolicy.Https("file:///fixture")&&!PathPolicy.Https("https://user:pass@example.com"),"external-link-policy");
 
             DdaySelfTests.Run(Check);
+            SettingsRegressionTests.Run(Check);
+            ClaudeFailureRegressionTests();
             LocalProviderRegressionTests();
             CrossPlatformParityRegressionTests();
 
@@ -120,6 +122,37 @@ internal static class SelfTests
             }finally{foreach(var p in Directory.GetFiles(fixtureRoot))File.Delete(p);Directory.Delete(fixtureRoot);}
 Console.WriteLine($"RESULT passed={count} failed=0");return 0;
         }catch(Exception e){Console.WriteLine($"RESULT passed={count} failed=1 test={e.Message}");return 1;}
+    }
+    static void ClaudeFailureRegressionTests()
+    {
+        var root=Path.Combine(Path.GetTempPath(),"Orbit-claude-failure-"+Guid.NewGuid().ToString("N"));
+        var project=Directory.CreateDirectory(Path.Combine(root,"project")).FullName;
+        try {
+            var blocked=Path.Combine(project,"blocked.jsonl");
+            var good=Path.Combine(project,"good.jsonl");
+            File.WriteAllText(blocked,"{}");
+            File.WriteAllText(good,"{\"type\":\"user\",\"message\":{\"content\":\"fixture\"}}");
+            File.SetLastWriteTimeUtc(good,DateTime.UtcNow.AddMinutes(-1));
+            using(var held=new FileStream(blocked,FileMode.Open,FileAccess.ReadWrite,FileShare.None)) {
+                var partial=new LocalSnapshot();
+                LocalProviders.Claude(root,partial);
+                Check(partial.Agents.Count==1&&partial.Statuses[0]["state"]!.ToString()=="connected"&&partial.Statuses[0]["limited"]!.GetValue<bool>(),"claude-locked-session-preserves-healthy-session");
+            }
+            File.WriteAllText(blocked,"{\"type\":\"user\",\"message\":42}");
+            var malformed=new LocalSnapshot();LocalProviders.Claude(root,malformed);
+            Check(malformed.Agents.Count==1&&malformed.Statuses[0]["limited"]!.GetValue<bool>(),"claude-malformed-session-preserves-healthy-session");
+            var denied=Directory.CreateDirectory(Path.Combine(root,"denied"));
+            var subtree=new LocalSnapshot();
+            LocalProviders.Claude(root,subtree,folder=>folder==denied.FullName?throw new UnauthorizedAccessException("fixture"):Directory.EnumerateFiles(folder,"good.jsonl"));
+            Check(subtree.Agents.Count==1&&subtree.Statuses[0]["state"]!.ToString()=="connected"&&subtree.Statuses[0]["limited"]!.GetValue<bool>(),"claude-denied-project-preserves-healthy-project");
+            Directory.Delete(denied.FullName);
+            File.WriteAllText(blocked,"{\"type\":\"user\",\"message\":{\"content\":\"recovered\"}}");
+            var recovered=new LocalSnapshot();LocalProviders.Claude(root,recovered);
+            Check(recovered.Agents.Count==2&&!recovered.Statuses[0]["limited"]!.GetValue<bool>(),"claude-partial-status-clears-after-recovery");
+        } finally {
+            foreach(var file in Directory.GetFiles(project))File.Delete(file);
+            Directory.Delete(project);Directory.Delete(root);
+        }
     }
     static void LocalProviderRegressionTests()
     {

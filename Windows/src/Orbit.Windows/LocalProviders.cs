@@ -95,10 +95,11 @@ internal static class LocalProviders
     }
     static string Text(JsonNode? n)=>n is JsonValue v&&v.TryGetValue<string>(out var s)?s:"";
     internal const int ClaudeProjectLimit=200;
-    internal static void Claude(string root,LocalSnapshot result)
+    internal static void Claude(string root,LocalSnapshot result,Func<string,IEnumerable<string>>? enumerateFiles=null)
     {
         if(!Directory.Exists(root)){result.Statuses.Add(Status("claude","disconnected","Claude Code 폴더를 선택하세요."));return;}
         var watch=Stopwatch.StartNew();var files=new List<FileInfo>();bool limited=false;
+        enumerateFiles??=folder=>Directory.EnumerateFiles(folder,"*.jsonl");
         try
         {
             // Directory order is unrelated to recency, so the cap applies to the newest project folders.
@@ -108,15 +109,18 @@ internal static class LocalProviders
             {
                 if(watch.Elapsed.TotalSeconds>4){limited=true;break;}
                 if(!ReparsePolicy.Safe(dir.FullName)){limited=true;continue;}
-                foreach(var path in Directory.EnumerateFiles(dir.FullName,"*.jsonl"))
-                {
-                    if(files.Count>=20000||watch.Elapsed.TotalSeconds>4){limited=true;break;}
-                    if(PathPolicy.Within(root,path))files.Add(new(path));
-                }
+                try {
+                    foreach(var path in enumerateFiles(dir.FullName))
+                    {
+                        if(files.Count>=20000||watch.Elapsed.TotalSeconds>4){limited=true;break;}
+                        if(PathPolicy.Within(root,path))files.Add(new(path));else limited=true;
+                    }
+                }catch{limited=true;}
             }
             foreach(var file in files.OrderByDescending(f=>f.LastWriteTimeUtc).Take(24))
             {
                 if(watch.Elapsed.TotalSeconds>4){limited=true;break;}
+                try {
                 using var stream=new FileStream(file.FullName,FileMode.Open,FileAccess.Read,FileShare.ReadWrite|FileShare.Delete);
                 var head=new byte[(int)Math.Min(128*1024,stream.Length)];int n=stream.Read(head);
                 var chunks=new List<string>{Encoding.UTF8.GetString(head,0,n)};
@@ -143,8 +147,9 @@ internal static class LocalProviders
                 title=title.Replace('\r',' ').Replace('\n',' ');if(title.Length>160)title=title[..160];
                 var id=result.DisplayId("claude:"+file.FullName);result.AgentMap[id]="claude";
                 result.Agents.Add(new(){["id"]=id,["provider"]="claude",["title"]=title,["project"]=project,["updated"]=new DateTimeOffset(file.LastWriteTimeUtc).ToUnixTimeSeconds(),["status"]="최근 기록",["openMode"]=AppLinks.Registered("claude")?"appHome":"unavailable"});
+                }catch{limited=true;}
             }
-            result.Statuses.Add(Status("claude","connected","로컬 기록 연결됨 · 앱에서 작업 직접 선택",0,limited));
+            result.Statuses.Add(Status("claude","connected",limited?"일부 범위만 검색됨 · 기록 접근/형식 확인 필요":"로컬 기록 연결됨 · 앱에서 작업 직접 선택",0,limited));
         }
         catch {result.Statuses.Add(Status("claude","error","Claude Code 기록 형식을 확인하세요."));}
     }

@@ -13,17 +13,18 @@ internal static class PersistenceUiTests
             window.__orbitPersistenceDone=false;window.__orbitPersistencePass=false;
             void(async()=>{try{
               await send('textSize',{value:'xlarge'});
+              await send('theme',{value:'pearl'});
               openDdayManager();
               document.querySelector('#dday-title').value='재시작 복원 검증일';
               document.querySelector('#dday-date').value='2032-03-01';
               await submitDday({preventDefault(){}});
-              window.__orbitPersistencePass=state.settings.textSize==='xlarge'&&state.ddays.length===1&&document.body.dataset.textSize==='xlarge';
+              window.__orbitPersistencePass=state.theme==='pearl'&&state.settings.textSize==='xlarge'&&state.ddays.length===1&&document.body.dataset.textSize==='xlarge';
             }catch{window.__orbitPersistencePass=false}finally{window.__orbitPersistenceDone=true}})();
             """ : """
             window.__orbitPersistenceDone=false;window.__orbitPersistencePass=false;
             void(async()=>{try{
               const entry=state.ddays[0];
-              window.__orbitPersistencePass=state.settings.textSize==='xlarge'&&state.ddays.length===1&&entry.targetDate==='2032-03-01'&&document.body.dataset.textSize==='xlarge'&&!!document.querySelector('[data-dday-edit="'+entry.id+'"]');
+              window.__orbitPersistencePass=state.theme==='pearl'&&state.settings.textSize==='xlarge'&&state.ddays.length===1&&entry.targetDate==='2032-03-01'&&document.body.dataset.textSize==='xlarge'&&!!document.querySelector('[data-dday-edit="'+entry.id+'"]');
             }catch{window.__orbitPersistencePass=false}finally{window.__orbitPersistenceDone=true}})();
             """;
         await core.ExecuteScriptAsync(script);

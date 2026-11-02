@@ -1,5 +1,22 @@
 # Windows 구현 검증 기록
 
+## 2026-11-02 안정성 개선 검증
+
+기준 `482795e`에서 Windows 전용 설정·로컬 제공자 오류 처리와 회귀 시험을 수정했다. 발견사항·개선안·자체 검토 범위는 `docs/plans/2026-11-02-windows-review.md`를 참조한다.
+
+| 항목 | 상태 | 근거 |
+| --- | --- | --- |
+| Release 빌드 | PASS | 고정 SDK 10.0.400, locked restore, 경고 0·오류 0 |
+| 공용 JS / C# D-day 소스 | PASS | 43/43, 36/36 |
+| 네이티브 자체 시험 | PASS | 124/124, 설정·Claude 실패 회귀 11개 추가 |
+| SQLite 읽기 전용 | PASS | winsqlite3 3.53.4 합성 WAL, 쓰기 I/O 0회/0바이트·해시 불변 |
+| Credential Manager | PASS | 별도 시험 자격증명 왕복·정리 |
+| WebView2 | PASS | 네이티브 왕복, D-day 9조합, 배율 상당 40조합 |
+| 재시작 복원 | PASS | 격리 프로세스 2개에서 Pearl·xlarge·D-day 복원, 확인 과정 저장 파일 불변 |
+| macOS | 미검증 | build.sh 실행 시 xcrun 부재. macOS 실행 파일 없음. Sources·Resources 변경 없음 |
+
+실제 Google 쓰기, 실제 장치 ACL·링크·클라우드 경계, 다중 모니터 검증과 코드 서명은 이번 범위에 포함하지 않는다. 이는 위 Windows 자동 검증의 통과와 별개인 시험판 제한이다. 패키지·로컬 설치·게시 결과는 후속 기록으로 추가한다.
+
 ## 2026-10-26 검증 (R03~R09·M1~M6 Windows 네이티브)
 
 기준: 인계 문서 `docs/plans/2026-10-26-windows-handoff.md`, 최신 main `938cb2b` 위 후보 커밋. 과거(2026-09-17) 결과와 Mac 시험은 이번 근거로 쓰지 않음.

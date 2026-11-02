@@ -254,22 +254,20 @@ internal sealed class OrbitWindow : Window
         if(ready&&web.CoreWebView2!=null)await web.CoreWebView2.ExecuteScriptAsync("refreshDdayClock()");
         if(!smoke)await Refresh(true);
     }
-    void SaveSettings()=>settings.Save(qaDataRoot);
+    void ChangeSettings(Action<Settings> change) {
+        try {settings.Change(change,qaDataRoot);}finally{Publish();}
+    }
     async Task Dispatch(JsonElement message)
     {
         var action=message.GetProperty("action").GetString();string Id()=>message.GetProperty("id").GetString()!;bool Value()=>message.GetProperty("value").GetBoolean();
         if(smoke&&qaDataRoot==null&&action is not ("addDday" or "updateDday" or "archiveDday" or "deleteDday")){if(action=="ready"){ready=true;Publish();}return;}
-        if(qaDataRoot!=null&&action is not ("ready" or "textSize" or "addDday" or "updateDday" or "archiveDday" or "deleteDday"))return;
+        if(qaDataRoot!=null&&action is not ("ready" or "theme" or "textSize" or "addDday" or "updateDday" or "archiveDday" or "deleteDday"))return;
         switch(action)
         {
             case "ready":ready=true;await Refresh(false);break;
             case "refresh":await Refresh(true);break;
-            case "theme":settings.Theme=message.GetProperty("value").GetString()!;SaveSettings();Publish();break;
-            case "textSize":
-                var previousTextSize=settings.TextSize;
-                settings.TextSize=message.GetProperty("value").GetString()!;
-                try { SaveSettings(); } catch { settings.TextSize=previousTextSize;Publish();throw; }
-                Publish();break;
+            case "theme":ChangeSettings(next=>next.Theme=message.GetProperty("value").GetString()!);break;
+            case "textSize":ChangeSettings(next=>next.TextSize=message.GetProperty("value").GetString()!);break;
             case "pin":pinned=Value();Publish();break;
             case "close":Hide();break;
             case "quit":Exit();break;
@@ -280,8 +278,8 @@ internal sealed class OrbitWindow : Window
                     if(picker.ShowDialog(this)==true) {
                         var path=picker.FolderName;
                         if(!ReparsePolicy.Safe(path))throw new InvalidOperationException();
-                        switch(action){case "chooseDrive":settings.Drive=path;break;case "chooseVault":settings.Vault=path;break;case "chooseCodex":settings.Codex=path;break;case "chooseClaude":settings.Claude=path;break;}
-                        SaveSettings();local=new();lastLocal=DateTime.MinValue;Publish();
+                        ChangeSettings(next=>{switch(action){case "chooseDrive":next.Drive=path;break;case "chooseVault":next.Vault=path;break;case "chooseCodex":next.Codex=path;break;case "chooseClaude":next.Claude=path;break;}});
+                        local=new();lastLocal=DateTime.MinValue;Publish();
                     }
                 }finally{modal=false;}
                 await Refresh(true);break;

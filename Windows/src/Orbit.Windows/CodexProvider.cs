@@ -7,10 +7,13 @@ internal static class CodexProvider
 {
     public static void Read(string root,LocalSnapshot result)
     {
-        var path=Path.Combine(root,"state_5.sqlite");
-        if(!File.Exists(path)){result.Statuses.Add(LocalProviders.Status("codex","disconnected","Codex 폴더를 선택하세요."));return;}
         try
         {
+            if(string.IsNullOrWhiteSpace(root)){result.Statuses.Add(LocalProviders.Status("codex","disconnected","Codex 폴더를 선택하세요."));return;}
+            var path=Path.Combine(root,"state_5.sqlite");
+            // Validate malformed paths inside the source boundary so a bad setting cannot abort all refreshes.
+            _=Path.GetFullPath(path);
+            if(!File.Exists(path)){result.Statuses.Add(LocalProviders.Status("codex","disconnected","Codex 폴더를 선택하세요."));return;}
             if(!PathPolicy.Within(root,path))throw new IOException();
             using var db=new ReadSqlite(path);
             var rows=db.Query("SELECT id,COALESCE(NULLIF(name,''),title) AS title,cwd,updated_at,recency_at FROM threads WHERE archived=0 AND source IN ('cli','vscode','exec') AND (thread_source IS NULL OR thread_source='user') AND (agent_path IS NULL OR agent_path='/root') ORDER BY recency_at DESC LIMIT 24");
