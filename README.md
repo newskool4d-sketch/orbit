@@ -71,11 +71,13 @@ bash scripts/test-macos-auth-bridge.sh
 
 앱은 개인용 ad-hoc 서명입니다. App Store 배포·공증 대상이 아니며 macOS 키체인 접근 확인이 나타날 수 있습니다. Codex/Claude의 로컬 기록 형식이나 URL 처리 방식이 바뀌면 해당 연결 코드 조정이 필요합니다.
 
+GitHub Actions **CI**는 `main` push와 pull request마다 macOS(`scripts/test.sh`: `build.sh`·`--self-test`·공용 웹 테스트·auth bridge 시험)와 Windows(`build.ps1`·`--self-test`·공용 웹 테스트)를 자동 실행합니다. Windows의 `--sqlite-test`는 러너의 winsqlite3 버전에 따라 결과가 달라 정보용으로만 보고하며, WebView2 화면·Credential Manager·재시작 복원을 포함한 전체 gate(`test.ps1 -NativeUi -Credential`)는 사용자 Windows PC에서 수동 실행합니다.
+
 macOS DMG는 `bash scripts/package-macos.sh` 또는 GitHub Actions의 수동 **macOS DMG preview**로 생성합니다. 패키지 검증·초안 릴리스·공개 절차는 [macOS 릴리스 안내](docs/macos-release.md)를 확인하세요.
 
 ## 검증 경계
 
-2026-10-26의 R06~R09 수정·검증 범위는 [정렬·경로·탐색·오류 안내 기록](docs/plans/2026-10-26-local-source-fixes.md)을 참조하세요. Windows 변경은 네이티브 전체 gate가 남아 있으며 macOS 검증으로 대체하지 않습니다.
+2026-10-26의 R06~R09 수정·검증 범위는 [정렬·경로·탐색·오류 안내 기록](docs/plans/2026-10-26-local-source-fixes.md)을 참조하세요. 해당 변경의 Windows 네이티브 전체 gate·패키지·설치본·실제 화면 검증은 이후 Windows PC에서 수행했으며 결과는 [Windows 검증 기록](Windows/VERIFICATION.md)의 2026-10-26 항목과 [2026-11-02 검토 기록](docs/plans/2026-11-02-windows-review.md)에 있습니다. 전체 판정은 PARTIAL(시험판)이고, macOS 검증은 Windows 검증을 대체하지 않습니다.
 
 2026-09-06 기준 설치 앱의 패널 표시, 캘린더 탭과 7일 일정 목록, 최근 파일 한글 검색, Claude Code 필터, 설정 열기/닫기, Moss·Pearl·Midnight 전환, 고정 on/off, 수동 새로고침을 확인했습니다. Swift 32개 + 웹 5개 테스트 및 빌드·서명 검증이 통과했습니다. 로컬 smoke-test 결과는 파일 60개, Codex 24개, Claude Code 13개이며 네 소스 모두 연결됨입니다.
 

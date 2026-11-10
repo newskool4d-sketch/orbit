@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: macOS build, self-test, shared web tests, auth bridge tests
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Build, self-test, shared web tests, auth bridge tests
+        shell: bash
+        run: bash scripts/test.sh
+
+  windows:
+    name: Windows build, self-test, shared web tests
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: Windows/global.json
+      - name: Restore (locked) and Release build
+        shell: pwsh
+        run: ./Windows/scripts/build.ps1
+      - name: Shared web tests
+        shell: pwsh
+        run: node --test tests/web.test.cjs tests/platform.test.cjs tests/windows-ui.test.cjs tests/dday-integration.test.cjs
+      - name: Native self-test
+        shell: pwsh
+        run: ./Windows/src/Orbit.Windows/bin/Release/net10.0-windows/win-x64/Orbit.Windows.exe --self-test
+      # ReadSqlite accepts only winsqlite3 versions verified on a real Windows PC, so this
+      # can fail on the runner for environment reasons; the full gate stays manual (VERIFICATION.md).
+      - name: SQLite read-only probe (environment-dependent, informational)
+        shell: pwsh
+        continue-on-error: true
+        run: ./Windows/src/Orbit.Windows/bin/Release/net10.0-windows/win-x64/Orbit.Windows.exe --sqlite-test
